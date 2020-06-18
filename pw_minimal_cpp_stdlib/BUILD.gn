@@ -12,9 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("include_dirs") {
   include_dirs = [ "public" ]
 }
@@ -23,7 +26,7 @@ config("no_cpp_includes") {
   cflags = [ "-nostdinc++" ]
 }
 
-source_set("pw_minimal_cpp_stdlib") {
+pw_source_set("pw_minimal_cpp_stdlib") {
   public_configs = [ ":include_dirs" ]
   configs = [ ":no_cpp_includes" ]
   public = [

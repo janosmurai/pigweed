@@ -17,13 +17,16 @@
 
 #include "gtest/gtest.h"
 #include "pw_tokenizer/tokenize.h"
+#include "pw_tokenizer/tokenize_to_global_handler.h"
+#include "pw_tokenizer/tokenize_to_global_handler_with_payload.h"
 
 namespace pw {
 namespace tokenizer {
 namespace {
 
 template <size_t kSize>
-uint32_t TestHash(const char (&str)[kSize]) {
+uint32_t TestHash(const char (&str)[kSize])
+    PW_NO_SANITIZE("unsigned-integer-overflow") {
   static_assert(kSize > 0u, "Must have at least a null terminator");
 
   static constexpr uint32_t k65599HashConstant = 65599u;
@@ -36,6 +39,8 @@ uint32_t TestHash(const char (&str)[kSize]) {
       std::min(static_cast<size_t>(PW_TOKENIZER_CFG_HASH_LENGTH), kSize - 1);
 
   // Hash all of the characters in the string as unsigned ints.
+  // The coefficient calculation is done modulo 0x100000000, so the unsigned
+  // integer overflows are intentional.
   for (size_t i = 0; i < length; ++i) {
     hash += coefficient * str[i];
     coefficient *= k65599HashConstant;
@@ -123,8 +128,6 @@ TEST_F(TokenizeToCallback, Variety) {
   EXPECT_TRUE(std::memcmp(expected.data(), message_, expected.size()) == 0);
 }
 
-#if PW_TOKENIZER_CFG_ENABLE_TOKENIZE_TO_GLOBAL_HANDLER
-
 class TokenizeToGlobalHandler : public GlobalMessage<TokenizeToGlobalHandler> {
 };
 
@@ -141,15 +144,11 @@ extern "C" void pw_TokenizerHandleEncodedMessage(const uint8_t* encoded_message,
   TokenizeToGlobalHandler::SetMessage(encoded_message, size_bytes);
 }
 
-#endif  // PW_TOKENIZER_CFG_ENABLE_TOKENIZE_TO_GLOBAL_HANDLER
-
-#if PW_TOKENIZER_CFG_ENABLE_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD
-
 class TokenizeToGlobalHandlerWithPayload
     : public GlobalMessage<TokenizeToGlobalHandlerWithPayload> {
  public:
   static void SetPayload(pw_TokenizerPayload payload) {
-    payload_ = reinterpret_cast<intptr_t>(payload);
+    payload_ = static_cast<intptr_t>(payload);
   }
 
  protected:
@@ -167,18 +166,13 @@ TEST_F(TokenizeToGlobalHandlerWithPayload, Variety) {
       ExpectedData<0, 0, 0x00, 0x00, 0x00, 0x80, 0>("%x%lld%1.2f%s");
 
   PW_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD(
-      reinterpret_cast<pw_TokenizerPayload>(123),
-      "%x%lld%1.2f%s",
-      0,
-      0ll,
-      -0.0,
-      "");
+      static_cast<pw_TokenizerPayload>(123), "%x%lld%1.2f%s", 0, 0ll, -0.0, "");
   ASSERT_TRUE(expected.size() == message_size_bytes_);
   EXPECT_TRUE(std::memcmp(expected.data(), message_, expected.size()) == 0);
   EXPECT_TRUE(payload_ == 123);
 
   PW_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD(
-      reinterpret_cast<pw_TokenizerPayload>(-543),
+      static_cast<pw_TokenizerPayload>(-543),
       "%x%lld%1.2f%s",
       0,
       0ll,
@@ -196,8 +190,6 @@ extern "C" void pw_TokenizerHandleEncodedMessageWithPayload(
   TokenizeToGlobalHandlerWithPayload::SetMessage(encoded_message, size_bytes);
   TokenizeToGlobalHandlerWithPayload::SetPayload(payload);
 }
-
-#endif  // PW_TOKENIZER_CFG_ENABLE_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD
 
 }  // namespace
 }  // namespace tokenizer

@@ -12,8 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-import("$dir_pw_docgen/docs.gni")
+# gn-format disable
+import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_docgen/docs.gni")
 pw_doc_group("core_docs") {
   inputs = [
     "images/pw_env_setup_demo.gif",
@@ -56,12 +58,14 @@ pw_doc_gen("docs") {
   deps = [
     ":core_docs",
     ":target_docs",
+    "$dir_pw_allocator:docs",
     "$dir_pw_assert:docs",
     "$dir_pw_assert_basic:docs",
     "$dir_pw_base64:docs",
     "$dir_pw_bloat:docs",
     "$dir_pw_boot_armv7m:docs",
     "$dir_pw_build:docs",
+    "$dir_pw_bytes:docs",
     "$dir_pw_checksum:docs",
     "$dir_pw_cli:docs",
     "$dir_pw_containers:docs",
@@ -74,6 +78,7 @@ pw_doc_gen("docs") {
     "$dir_pw_kvs:docs",
     "$dir_pw_log:docs",
     "$dir_pw_log_basic:docs",
+    "$dir_pw_log_tokenized:docs",
     "$dir_pw_minimal_cpp_stdlib:docs",
     "$dir_pw_module:docs",
     "$dir_pw_polyfill:docs",
@@ -82,8 +87,11 @@ pw_doc_gen("docs") {
     "$dir_pw_protobuf:docs",
     "$dir_pw_protobuf_compiler:docs",
     "$dir_pw_result:docs",
+    "$dir_pw_ring_buffer:docs",
+    "$dir_pw_rpc:docs",
     "$dir_pw_span:docs",
     "$dir_pw_status:docs",
+    "$dir_pw_stream:docs",
     "$dir_pw_string:docs",
     "$dir_pw_sys_io:docs",
     "$dir_pw_sys_io_baremetal_stm32f429:docs",
@@ -92,8 +100,10 @@ pw_doc_gen("docs") {
     "$dir_pw_target_runner:docs",
     "$dir_pw_tokenizer:docs",
     "$dir_pw_toolchain:docs",
+    "$dir_pw_trace:docs",
     "$dir_pw_unit_test:docs",
     "$dir_pw_varint:docs",
     "$dir_pw_watch:docs",
+    "$dir_pw_web_ui:docs",
   ]
 }

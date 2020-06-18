@@ -38,10 +38,17 @@ directories like so:
 
 .. code:: sh
 
-  $ pw watch out/host out/disco
+  $ pw watch out/host
+
+  # Alternatively,
+  $ pw watch --build-directory out/host --build-directory out/disco
 
 The ``--patterns`` and ``--ignore_patterns`` arguments can be used to include
 and exclude certain file patterns that will trigger rebuilds.
+
+The ``--exclude_list`` argument can be used to exclude directories from
+being watched by your system. This can decrease the inotify number in Linux
+system.
 
 Unit Test Integration
 =====================

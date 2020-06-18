@@ -28,8 +28,8 @@
 
 #include "gtest/gtest.h"
 #include "pw_kvs/crc16_checksum.h"
+#include "pw_kvs/fake_flash_memory.h"
 #include "pw_kvs/flash_partition_with_stats.h"
-#include "pw_kvs/in_memory_fake_flash.h"
 #include "pw_kvs/internal/entry.h"
 #include "pw_kvs/key_value_store.h"
 #include "pw_log/log.h"
@@ -197,7 +197,7 @@ class KvsTester {
     std::cout << "Entries: " << map_.size() << '\n';
     std::cout << "------------------------------------------------\n";
     for (const auto& [key, value] : map_) {
-      std::cout << key << " = " << value << '\n';
+      std::cout << key << " = [" << value << "]\n";
       map_keys.insert(key);
     }
     std::cout << "\\===============================================/\n";
@@ -321,8 +321,12 @@ class KvsTester {
     StartOperation("GCFull");
     Status status = kvs_.FullMaintenance();
     EXPECT_EQ(Status::OK, status);
+
     KeyValueStore::StorageStats post_stats = kvs_.GetStorageStats();
-    EXPECT_EQ(post_stats.reclaimable_bytes, 0U);
+    if (post_stats.in_use_bytes > ((partition_.size_bytes() * 70) / 100)) {
+      EXPECT_EQ(post_stats.reclaimable_bytes, 0U);
+    }
+
     FinishOperation("GCFull", status);
   }
 
@@ -389,8 +393,8 @@ class KvsTester {
 
   static constexpr size_t kMaxValueLength = 64;
 
-  static FakeFlashBuffer<kParams.sector_size,
-                         (kParams.sector_count * kParams.redundancy)>
+  static FakeFlashMemoryBuffer<kParams.sector_size,
+                               (kParams.sector_count * kParams.redundancy)>
       flash_;
 
   FlashPartitionWithStatsBuffer<kMaxEntries> partition_;
@@ -402,11 +406,11 @@ class KvsTester {
 };
 
 template <const TestParameters& kParams>
-FakeFlashBuffer<kParams.sector_size,
-                (kParams.sector_count * kParams.redundancy)>
+FakeFlashMemoryBuffer<kParams.sector_size,
+                      (kParams.sector_count * kParams.redundancy)>
     KvsTester<kParams>::flash_ =
-        FakeFlashBuffer<kParams.sector_size,
-                        (kParams.sector_count * kParams.redundancy)>(
+        FakeFlashMemoryBuffer<kParams.sector_size,
+                              (kParams.sector_count * kParams.redundancy)>(
             kParams.sector_alignment);
 
 #define _TEST(fixture, test, ...) \

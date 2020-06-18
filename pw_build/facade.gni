@@ -11,8 +11,11 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
+# gn-format disable
+import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/python_script.gni")
+import("$dir_pw_build/target_types.gni")
 
 # Declare a facade.
 # A Pigweed facade is an API layer that has a single implementation it must link
@@ -30,10 +33,19 @@ import("$dir_pw_build/python_script.gni")
 #
 # Args:
 #  - backend: the dependency that implements this facade
+#  - facade_name: (optional) The name to use for the facade target on which the
+#        backend depends. Only required when a module defines multiple facades.
+#        Defaults to "facade".
 #
 template("pw_facade") {
   assert(defined(invoker.backend),
          "pw_facade requires a reference to a backend variable for the facade")
+
+  if (defined(invoker.facade_name)) {
+    _facade_name = invoker.facade_name
+  } else {
+    _facade_name = "facade"
+  }
 
   # A facade's headers are split into a separate target to avoid a circular
   # dependency between the facade and the backend.
@@ -48,7 +60,7 @@ template("pw_facade") {
   #     sources = [ "foo.cc" ]
   #   }
   #
-  #   source_set("foo_backend_bar") {
+  #   pw_source_set("foo_backend_bar") {
   #     deps = [ ":facade" ]
   #     sources = [ "bar.cc" ]
   #   }
@@ -66,41 +78,41 @@ template("pw_facade") {
     "public_deps",
     "public",
   ]
-  source_set("facade") {
+  pw_source_set(_facade_name) {
     forward_variables_from(invoker, _facade_vars)
-    sources = public
   }
 
   if (invoker.backend == "") {
     # If backend is not set to anything, create a script that emits an error.
-    pw_python_script(target_name) {
+    # This will be added as a data dependency to the actual target, so that
+    # attempting to build the facade without a backend fails with a relevant
+    # error message.
+    _main_target_name = target_name
+
+    pw_python_script(_main_target_name + "_NO_BACKEND_SET") {
       stamp = true
       script = "$dir_pw_build/py/null_backend.py"
-      args = [ target_name ]
+      args = [ _main_target_name ]
       not_needed(invoker, "*")
     }
-  } else {
-    # When a backend is set, create a target defining the facade library.
-    source_set(target_name) {
-      # The main library contains everything else specified in the template.
-      _ignore_vars = [ "backend" ] + _facade_vars
-      forward_variables_from(invoker, "*", _ignore_vars)
+  }
 
-      public_deps = [
-        ":facade",
+  # Create a target that defines the main facade library. Always emit this
+  # target, even if the backend isn't defined, so that the dependency graph is
+  # correctly expressed for gn check.
+  pw_source_set(target_name) {
+    # The main library contains everything else specified in the template.
+    _ignore_vars = [ "backend" ] + _facade_vars
+    forward_variables_from(invoker, "*", _ignore_vars)
 
-        # Inject the backend as a dependency.
-        invoker.backend,
-      ]
+    public_deps = [ ":$_facade_name" ]
 
-      if (defined(sources)) {
-        # Protect against the pattern
-        #
-        #   sources = [ "foo.cc" ] + public
-        #
-        # as the public headers are already listed in the :facade target.
-        sources -= invoker.public
-      }
+    # If the backend is set, inject it as a dependency.
+    if (invoker.backend != "") {
+      public_deps += [ invoker.backend ]
+    } else {
+      # If the backend is not set, depend on the *_NO_BACKEND_SET target.
+      public_deps += [ ":$_main_target_name" + "_NO_BACKEND_SET" ]
     }
   }
 }

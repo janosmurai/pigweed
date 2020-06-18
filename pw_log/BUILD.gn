@@ -12,43 +12,46 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
 import("$dir_pw_build/facade.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
+declare_args() {
+  # Backend for the pw_log module.
+  pw_log_BACKEND = ""
+}
 
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
 pw_facade("pw_log") {
-  backend = dir_pw_log_backend
+  backend = pw_log_BACKEND
   public_configs = [ ":default_config" ]
   public = [
     "public/pw_log/levels.h",
     "public/pw_log/log.h",
   ]
-  public_deps = [ dir_pw_preprocessor ]
 }
 
 pw_test_group("tests") {
-  tests = []
-  if (dir_pw_log_backend != "") {
-    tests += [ ":basic_log_test" ]
-  }
+  tests = [ ":basic_log_test" ]
 }
 
-if (dir_pw_log_backend != "") {
-  pw_test("basic_log_test") {
-    deps = [
-      ":pw_log",
-      dir_pw_log_backend,
-    ]
+pw_test("basic_log_test") {
+  enable_if = pw_log_BACKEND != ""
+  deps = [
+    ":pw_log",
+    dir_pw_preprocessor,
+    pw_log_BACKEND,
+  ]
 
-    sources = [
-      "basic_log_test.cc",
-      "basic_log_test_plain_c.c",
-    ]
-  }
+  sources = [
+    "basic_log_test.cc",
+    "basic_log_test_plain_c.c",
+  ]
 }
 
 pw_doc_group("docs") {

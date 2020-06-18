@@ -122,6 +122,8 @@ class Entry {
   StatusWithSize ReadValue(span<std::byte> buffer,
                            size_t offset_bytes = 0) const;
 
+  Status ValueMatches(span<const std::byte> value) const;
+
   Status VerifyChecksum(std::string_view key,
                         span<const std::byte> value) const;
 
@@ -202,6 +204,9 @@ class Entry {
                                           span<const std::byte> value) const;
 
   Status CalculateChecksumFromFlash();
+
+  // Update the checksum with 0s to pad the entry to its alignment boundary.
+  void AddPaddingBytesToChecksum() const;
 
   static constexpr uint8_t alignment_bytes_to_units(size_t alignment_bytes) {
     return (alignment_bytes + 15) / 16 - 1;  // An alignment of 0 is invalid.

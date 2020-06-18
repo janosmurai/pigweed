@@ -39,7 +39,7 @@
 #include "pw_string/string_builder.h"
 
 #if USE_MEMORY_BUFFER
-#include "pw_kvs/in_memory_fake_flash.h"
+#include "pw_kvs/fake_flash_memory.h"
 #endif  // USE_MEMORY_BUFFER
 
 namespace pw::kvs {
@@ -112,7 +112,7 @@ struct FlashWithPartitionFake {
   FlashWithPartitionFake(size_t alignment_bytes)
       : memory(alignment_bytes), partition(&memory, 0, memory.sector_count()) {}
 
-  FakeFlashBuffer<sector_size_bytes, sector_count> memory;
+  FakeFlashMemoryBuffer<sector_size_bytes, sector_count> memory;
   FlashPartition partition;
 
  public:
@@ -156,14 +156,14 @@ typedef FlashWithPartitionFake<4 * 128 /*sector size*/, 6 /*sectors*/> Flash;
 #if USE_MEMORY_BUFFER
 // Although it might be useful to test other configurations, some tests require
 // at least 3 sectors; therfore it should have this when checked in.
-FakeFlashBuffer<4 * 1024, 6> test_flash(
+FakeFlashMemoryBuffer<4 * 1024, 6> test_flash(
     16);  // 4 x 4k sectors, 16 byte alignment
 FlashPartition test_partition(&test_flash, 0, test_flash.sector_count());
-FakeFlashBuffer<1024, 60> large_test_flash(8);
+FakeFlashMemoryBuffer<1024, 60> large_test_flash(8);
 FlashPartition large_test_partition(&large_test_flash,
                                     0,
                                     large_test_flash.sector_count());
-#else   // TODO: Test with real flash
+#else  // TODO: Test with real flash
 FlashPartition& test_partition = FlashExternalTestPartition();
 #endif  // USE_MEMORY_BUFFER
 
@@ -171,7 +171,8 @@ std::array<byte, 512> buffer;
 constexpr std::array<const char*, 3> keys{"TestKey1", "Key2", "TestKey3"};
 
 ChecksumCrc16 checksum;
-constexpr EntryFormat format{.magic = 0xBAD'C0D3, .checksum = &checksum};
+constexpr EntryFormat default_format{.magic = 0xBAD'C0D3,
+                                     .checksum = &checksum};
 
 size_t RoundUpForAlignment(size_t size) {
   return AlignUp(size, test_partition.alignment_bytes());
@@ -204,7 +205,7 @@ class KvsAttributes {
 
 class EmptyInitializedKvs : public ::testing::Test {
  protected:
-  EmptyInitializedKvs() : kvs_(&test_partition, format) {
+  EmptyInitializedKvs() : kvs_(&test_partition, default_format) {
     test_partition.Erase();
     ASSERT_EQ(Status::OK, kvs_.Init());
   }
@@ -310,7 +311,7 @@ TEST_F(EmptyInitializedKvs, PutAndGetByValue_Span) {
 
 TEST_F(EmptyInitializedKvs, PutAndGetByValue_NotConvertibleToSpan) {
   struct TestStruct {
-    double a;
+    float a;
     bool b;
   };
   const TestStruct input{-1234.5, true};
@@ -406,7 +407,7 @@ TEST_F(EmptyInitializedKvs, Delete_AddBackKey_PersistsAfterInitialization) {
 
   // Ensure that the re-added key is still present after reinitialization.
   KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> new_kvs(&test_partition,
-                                                              format);
+                                                              default_format);
   ASSERT_EQ(Status::OK, new_kvs.Init());
 
   EXPECT_EQ(Status::OK, new_kvs.Put("kEy", as_bytes(span("45678"))));
@@ -480,9 +481,9 @@ TEST_F(EmptyInitializedKvs, Iteration_OneItem) {
   for (KeyValueStore::Item entry : kvs_) {
     EXPECT_STREQ(entry.key(), "kEy");  // Make sure null-terminated.
 
-    char buffer[sizeof("123")] = {};
-    EXPECT_EQ(Status::OK, entry.Get(&buffer));
-    EXPECT_STREQ("123", buffer);
+    char temp[sizeof("123")] = {};
+    EXPECT_EQ(Status::OK, entry.Get(&temp));
+    EXPECT_STREQ("123", temp);
   }
 }
 
@@ -490,11 +491,11 @@ TEST_F(EmptyInitializedKvs, Iteration_GetWithOffset) {
   ASSERT_EQ(Status::OK, kvs_.Put("key", as_bytes(span("not bad!"))));
 
   for (KeyValueStore::Item entry : kvs_) {
-    char buffer[5];
-    auto result = entry.Get(as_writable_bytes(span(buffer)), 4);
+    char temp[5];
+    auto result = entry.Get(as_writable_bytes(span(temp)), 4);
     EXPECT_EQ(Status::OK, result.status());
     EXPECT_EQ(5u, result.size());
-    EXPECT_STREQ("bad!", buffer);
+    EXPECT_STREQ("bad!", temp);
   }
 }
 
@@ -629,6 +630,45 @@ TEST_F(EmptyInitializedKvs, Basic) {
   EXPECT_EQ(kvs_.size(), 0u);
 }
 
+TEST(InitCheck, TooFewSectors) {
+  // Use test flash with 1 x 4k sectors, 16 byte alignment
+  FakeFlashMemoryBuffer<4 * 1024, 1> test_flash(16);
+  FlashPartition test_partition(&test_flash, 0, test_flash.sector_count());
+
+  constexpr EntryFormat format{.magic = 0xBAD'C0D3, .checksum = nullptr};
+  KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs(&test_partition,
+                                                          format);
+
+  EXPECT_EQ(kvs.Init(), Status::FAILED_PRECONDITION);
+}
+
+TEST(InitCheck, ZeroSectors) {
+  // Use test flash with 1 x 4k sectors, 16 byte alignment
+  FakeFlashMemoryBuffer<4 * 1024, 1> test_flash(16);
+
+  // Set FlashPartition to have 0 sectors.
+  FlashPartition test_partition(&test_flash, 0, 0);
+
+  constexpr EntryFormat format{.magic = 0xBAD'C0D3, .checksum = nullptr};
+  KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs(&test_partition,
+                                                          format);
+
+  EXPECT_EQ(kvs.Init(), Status::FAILED_PRECONDITION);
+}
+
+TEST(InitCheck, TooManySectors) {
+  // Use test flash with 1 x 4k sectors, 16 byte alignment
+  FakeFlashMemoryBuffer<4 * 1024, 5> test_flash(16);
+
+  // Set FlashPartition to have 0 sectors.
+  FlashPartition test_partition(&test_flash, 0, test_flash.sector_count());
+
+  constexpr EntryFormat format{.magic = 0xBAD'C0D3, .checksum = nullptr};
+  KeyValueStoreBuffer<kMaxEntries, 2> kvs(&test_partition, format);
+
+  EXPECT_EQ(kvs.Init(), Status::FAILED_PRECONDITION);
+}
+
 #define ASSERT_OK(expr) ASSERT_EQ(Status::OK, expr)
 #define EXPECT_OK(expr) EXPECT_EQ(Status::OK, expr)
 
@@ -716,7 +756,7 @@ TEST(InMemoryKvs, WriteAndReadOneKey) {
                                                           format);
   ASSERT_OK(kvs.Init());
 
-  // Add two entries with different keys and values.
+  // Add one entry.
   const char* key = "Key1";
   DBG("PUT value for key: %s", key);
   uint8_t written_value = 0xDA;
@@ -729,6 +769,37 @@ TEST(InMemoryKvs, WriteAndReadOneKey) {
   EXPECT_EQ(actual_value, written_value);
 
   EXPECT_EQ(kvs.size(), 1u);
+}
+
+TEST(InMemoryKvs, WriteOneKeyValueMultipleTimes) {
+  // Create and erase the fake flash.
+  Flash flash;
+  ASSERT_OK(flash.partition.Erase());
+
+  // Create and initialize the KVS.
+  KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs(&flash.partition,
+                                                          default_format);
+  ASSERT_OK(kvs.Init());
+
+  // Add one entry, with the same key and value, multiple times.
+  const char* key = "Key1";
+  uint8_t written_value = 0xDA;
+  for (int i = 0; i < 50; i++) {
+    DBG("PUT [%d] value for key: %s", i, key);
+    ASSERT_OK(kvs.Put(key, written_value));
+    EXPECT_EQ(kvs.size(), 1u);
+  }
+
+  DBG("GET value for key: %s", key);
+  uint8_t actual_value;
+  ASSERT_OK(kvs.Get(key, &actual_value));
+  EXPECT_EQ(actual_value, written_value);
+
+  // Verify that only one entry was written to the KVS.
+  EXPECT_EQ(kvs.size(), 1u);
+  EXPECT_EQ(kvs.transaction_count(), 1u);
+  KeyValueStore::StorageStats stats = kvs.GetStorageStats();
+  EXPECT_EQ(stats.reclaimable_bytes, 0u);
 }
 
 TEST(InMemoryKvs, Basic) {
@@ -859,7 +930,7 @@ TEST_F(EmptyInitializedKvs, Enable) {
   // Enable different KVS which should be able to properly setup the same map
   // from what is stored in flash.
   static KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs_local(
-      &test_partition, format);
+      &test_partition, default_format);
   ASSERT_EQ(Status::OK, kvs_local.Init());
   EXPECT_EQ(kvs_local.size(), keys.size());
 
@@ -1244,7 +1315,7 @@ TEST_F(EmptyInitializedKvs, ValueSize_DeletedKey) {
 
 class LargeEmptyInitializedKvs : public ::testing::Test {
  protected:
-  LargeEmptyInitializedKvs() : kvs_(&large_test_partition, format) {
+  LargeEmptyInitializedKvs() : kvs_(&large_test_partition, default_format) {
     ASSERT_EQ(
         Status::OK,
         large_test_partition.Erase(0, large_test_partition.sector_count()));

@@ -95,8 +95,8 @@ def arch_normalized():
     """Normalize arch into format expected in CIPD paths."""
 
     machine = platform.machine()
-    if machine.startswith('arm'):
-        return machine
+    if machine.startswith(('arm', 'aarch')):
+        return machine.replace('aarch', 'arm')
     if machine.endswith('64'):
         return 'amd64'
     if machine.endswith('86'):
@@ -185,12 +185,21 @@ brew uninstall python && brew install python
             content = res.read()
         except ssl.SSLError:
             print(
-                'Python SSL error--if using system Python try\n'
-                '    sudo pip install certifi.\n'
+                '\n'
+                'Bootstrap: SSL error in Python when downloading CIPD client.\n'
+                'If using system Python try\n'
+                '\n'
+                '    sudo pip install certifi\n'
+                '\n'
                 'If using Homebrew Python try\n'
+                '\n'
                 '    brew install openssl\n'
                 '    brew uninstall python\n'
-                '    brew install python\n',
+                '    brew install python\n'
+                '\n'
+                "Otherwise, check that your machine's Python can use SSL, "
+                'testing with the httplib module on Python 2 or http.client on '
+                'Python 3.',
                 file=sys.stderr)
             raise
 

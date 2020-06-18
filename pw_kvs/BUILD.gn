@@ -12,14 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_kvs") {
+pw_source_set("pw_kvs") {
   public_configs = [ ":default_config" ]
   public = [
     "public/pw_kvs/alignment.h",
@@ -46,53 +49,50 @@ source_set("pw_kvs") {
     "pw_kvs_private/macros.h",
     "sectors.cc",
   ]
-  sources += public
   public_deps = [
     dir_pw_containers,
     dir_pw_span,
     dir_pw_status,
   ]
   deps = [
+    dir_pw_assert,
     dir_pw_checksum,
     dir_pw_log,
   ]
-  friend = [
-    ":entry_test",
-    ":entry_cache_test",
-    ":key_value_store_test",
-    ":key_value_store_binary_format_test",
-    ":key_value_store_map_test",
-    ":sectors_test",
-  ]
+  friend = [ ":*" ]
 }
 
-source_set("crc16") {
+pw_source_set("crc16") {
   public = [ "public/pw_kvs/crc16_checksum.h" ]
-  sources = public
   public_deps = [
     ":pw_kvs",
     dir_pw_checksum,
   ]
 }
 
-source_set("test_utils") {
+pw_source_set("fake_flash") {
   public_configs = [ ":default_config" ]
-  public = [
-    "public/pw_kvs/in_memory_fake_flash.h",
-    "pw_kvs_private/byte_utils.h",
-  ]
-  sources = [ "in_memory_fake_flash.cc" ] + public
-  visibility = [ ":*" ]
+  public = [ "public/pw_kvs/fake_flash_memory.h" ]
+  sources = [ "fake_flash_memory.cc" ]
   public_deps = [
+    dir_pw_containers,
     dir_pw_kvs,
-    dir_pw_log,
+    dir_pw_span,
+    dir_pw_status,
   ]
+  deps = [ dir_pw_log ]
 }
 
-source_set("test_partition") {
+pw_source_set("test_utils") {
+  public_configs = [ ":default_config" ]
+  public = [ "pw_kvs_private/byte_utils.h" ]
+  visibility = [ ":*" ]
+}
+
+pw_source_set("test_partition") {
   public_configs = [ ":default_config" ]
   public = [ "public/pw_kvs/flash_partition_with_stats.h" ]
-  sources = [ "flash_partition_with_stats.cc" ] + public
+  sources = [ "flash_partition_with_stats.cc" ]
   visibility = [ ":*" ]
   public_deps = [
     dir_pw_kvs,
@@ -105,8 +105,8 @@ executable("debug_cli") {
   sources = [ "debug_cli.cc" ]
   deps = [
     ":crc16",
+    ":fake_flash",
     ":pw_kvs",
-    ":test_utils",
   ]
 }
 
@@ -121,6 +121,7 @@ pw_test_group("tests") {
     ":key_value_store_fuzz_test",
     ":key_value_store_map_test",
     ":sectors_test",
+    ":key_value_store_wear_test",
   ]
 }
 
@@ -141,6 +142,7 @@ pw_test("checksum_test") {
 pw_test("entry_test") {
   deps = [
     ":crc16",
+    ":fake_flash",
     ":pw_kvs",
     ":test_utils",
   ]
@@ -149,6 +151,7 @@ pw_test("entry_test") {
 
 pw_test("entry_cache_test") {
   deps = [
+    ":fake_flash",
     ":pw_kvs",
     ":test_utils",
   ]
@@ -158,6 +161,7 @@ pw_test("entry_cache_test") {
 pw_test("key_value_store_test") {
   deps = [
     ":crc16",
+    ":fake_flash",
     ":pw_kvs",
     ":test_utils",
     dir_pw_checksum,
@@ -169,6 +173,7 @@ pw_test("key_value_store_test") {
 pw_test("key_value_store_binary_format_test") {
   deps = [
     ":crc16",
+    ":fake_flash",
     ":pw_kvs",
     ":test_utils",
     dir_pw_log,
@@ -179,9 +184,9 @@ pw_test("key_value_store_binary_format_test") {
 pw_test("key_value_store_fuzz_test") {
   deps = [
     ":crc16",
+    ":fake_flash",
     ":pw_kvs",
     ":test_partition",
-    ":test_utils",
   ]
   sources = [ "key_value_store_fuzz_test.cc" ]
 }
@@ -189,9 +194,9 @@ pw_test("key_value_store_fuzz_test") {
 pw_test("key_value_store_map_test") {
   deps = [
     ":crc16",
+    ":fake_flash",
     ":pw_kvs",
     ":test_partition",
-    ":test_utils",
     dir_pw_checksum,
   ]
   sources = [ "key_value_store_map_test.cc" ]
@@ -199,10 +204,20 @@ pw_test("key_value_store_map_test") {
 
 pw_test("sectors_test") {
   deps = [
+    ":fake_flash",
     ":pw_kvs",
-    ":test_utils",
   ]
   sources = [ "sectors_test.cc" ]
+}
+
+pw_test("key_value_store_wear_test") {
+  deps = [
+    ":fake_flash",
+    ":pw_kvs",
+    ":test_partition",
+    dir_pw_log,
+  ]
+  sources = [ "key_value_store_wear_test.cc" ]
 }
 
 pw_doc_group("docs") {

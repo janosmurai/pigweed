@@ -1,4 +1,4 @@
-// Copyright 2019 The Pigweed Authors
+// Copyright 2020 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -22,9 +22,10 @@
 // The purpose of the tests in this file is primarily to verify that the
 // generated C++ interface is valid rather than the correctness of the
 // low-level encoder.
-#include "pw_protobuf_protos/test_protos/full_test.pb.h"
-#include "pw_protobuf_protos/test_protos/proto2.pb.h"
-#include "pw_protobuf_protos/test_protos/repeated.pb.h"
+#include "pw_protobuf_protos/test_protos/full_test.pwpb.h"
+#include "pw_protobuf_protos/test_protos/importer.pwpb.h"
+#include "pw_protobuf_protos/test_protos/proto2.pwpb.h"
+#include "pw_protobuf_protos/test_protos/repeated.pwpb.h"
 
 namespace pw::protobuf {
 namespace {
@@ -39,23 +40,23 @@ TEST(Codegen, Codegen) {
   pigweed.WriteMagicNumber(73);
   pigweed.WriteZiggy(-111);
   pigweed.WriteErrorMessage("not a typewriter");
-  pigweed.WriteBin(Pigweed::Protobuf::Binary::kZero);
+  pigweed.WriteBin(Pigweed::Protobuf::Binary::ZERO);
 
   {
     Pigweed::Pigweed::Encoder pigweed_pigweed = pigweed.GetPigweedEncoder();
-    pigweed_pigweed.WriteStatus(Bool::kFileNotFound);
+    pigweed_pigweed.WriteStatus(Bool::FILE_NOT_FOUND);
   }
 
   {
     Proto::Encoder proto = pigweed.GetProtoEncoder();
-    proto.WriteBin(Proto::Binary::kOff);
-    proto.WritePigweedPigweedBin(Pigweed::Pigweed::Binary::kZero);
-    proto.WritePigweedProtobufBin(Pigweed::Protobuf::Binary::kZero);
+    proto.WriteBin(Proto::Binary::OFF);
+    proto.WritePigweedPigweedBin(Pigweed::Pigweed::Binary::ZERO);
+    proto.WritePigweedProtobufBin(Pigweed::Protobuf::Binary::ZERO);
 
     {
       Pigweed::Protobuf::Compiler::Encoder meta = proto.GetMetaEncoder();
       meta.WriteFileName("/etc/passwd");
-      meta.WriteStatus(Pigweed::Protobuf::Compiler::Status::kFubar);
+      meta.WriteStatus(Pigweed::Protobuf::Compiler::Status::FUBAR);
     }
 
     {
@@ -78,7 +79,7 @@ TEST(Codegen, Codegen) {
           attributes.WriteValue("left-soc");
         }
 
-        device_info.WriteStatus(DeviceInfo::DeviceStatus::kPanic);
+        device_info.WriteStatus(DeviceInfo::DeviceStatus::PANIC);
       }
     }
   }
@@ -271,6 +272,27 @@ TEST(Codegen, Proto2) {
   EXPECT_EQ(proto.size(), sizeof(expected_proto));
   EXPECT_EQ(std::memcmp(proto.data(), expected_proto, sizeof(expected_proto)),
             0);
+}
+
+TEST(Codegen, Import) {
+  std::byte encode_buffer[64];
+  NestedEncoder<1, 3> encoder(encode_buffer);
+
+  Period::Encoder period(&encoder);
+  {
+    imported::Timestamp::Encoder start = period.GetStartEncoder();
+    start.WriteSeconds(1589501793);
+    start.WriteNanoseconds(511613110);
+  }
+
+  {
+    imported::Timestamp::Encoder end = period.GetEndEncoder();
+    end.WriteSeconds(1589501841);
+    end.WriteNanoseconds(490367432);
+  }
+
+  span<const std::byte> proto;
+  EXPECT_EQ(encoder.Encode(&proto), Status::OK);
 }
 
 }  // namespace

@@ -12,14 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_base64") {
+pw_source_set("pw_base64") {
   public_configs = [ ":default_config" ]
   public = [ "public/pw_base64/base64.h" ]
   sources = [ "base64.cc" ]
@@ -35,8 +38,8 @@ pw_test_group("tests") {
 pw_test("base64_test") {
   deps = [ ":pw_base64" ]
   sources = [
-    "base64_test.c",
     "base64_test.cc",
+    "base64_test_c.c",
   ]
 }
 

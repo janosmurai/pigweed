@@ -14,6 +14,7 @@
 
 #include "pw_containers/vector.h"
 
+#include <cstddef>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -21,8 +22,13 @@
 namespace pw {
 namespace {
 
+// Since pw::Vector<T, N> downcasts to a pw::Vector<T, 0>, ensure that the
+// alignment doesn't change.
+static_assert(alignof(Vector<std::max_align_t, 0>) ==
+              alignof(Vector<std::max_align_t, 1>));
+
 struct CopyOnly {
-  explicit CopyOnly(int value) : value(value) {}
+  explicit CopyOnly(int val) : value(val) {}
 
   CopyOnly(const CopyOnly& other) { value = other.value; }
 
@@ -37,7 +43,7 @@ struct CopyOnly {
 };
 
 struct MoveOnly {
-  explicit MoveOnly(int value) : value(value) {}
+  explicit MoveOnly(int val) : value(val) {}
 
   MoveOnly(const MoveOnly&) = delete;
 
@@ -286,8 +292,6 @@ TEST(Vector, Access_Data_ArrayLocationIsIndependentOfMaxSize) {
   EXPECT_EQ(vector.data(), base.data());
   EXPECT_EQ(vector.data(), (static_cast<Vector<int, 0>&>(base).data()));
   EXPECT_EQ(vector.data(), (static_cast<Vector<int, 1>&>(base).data()));
-  EXPECT_EQ(vector.data(), (static_cast<Vector<int, 100>&>(base).data()));
-  EXPECT_EQ(vector.data(), (static_cast<Vector<int, 999>&>(base).data()));
 }
 
 TEST(Vector, Modify_Clear) {

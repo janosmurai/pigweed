@@ -12,14 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_preprocessor") {
+pw_source_set("pw_preprocessor") {
   public_configs = [ ":default_config" ]
   public = [
     "public/pw_preprocessor/boolean.h",
@@ -45,19 +48,22 @@ pw_test_group("tests") {
   ]
 }
 
-template("preprocessor_test") {
-  not_needed([ "invoker" ])
-  pw_test(target_name) {
-    deps = [ ":pw_preprocessor" ]
-    sources = [ "$target_name.cc" ]
-  }
+pw_test("boolean_test") {
+  deps = [ ":pw_preprocessor" ]
+  sources = [ "boolean_test.cc" ]
 }
 
-preprocessor_test("boolean_test") {
+pw_test("concat_test") {
+  deps = [ ":pw_preprocessor" ]
+  sources = [ "concat_test.cc" ]
 }
-preprocessor_test("concat_test") {
+
+pw_test("macro_arg_count_test") {
+  deps = [ ":pw_preprocessor" ]
+  sources = [ "macro_arg_count_test.cc" ]
 }
-preprocessor_test("macro_arg_count_test") {
-}
-preprocessor_test("util_test") {
+
+pw_test("util_test") {
+  deps = [ ":pw_preprocessor" ]
+  sources = [ "util_test.cc" ]
 }

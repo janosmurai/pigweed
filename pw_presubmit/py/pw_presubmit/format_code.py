@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2019 The Pigweed Authors
+# Copyright 2020 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -29,7 +29,7 @@ import re
 import subprocess
 import sys
 from typing import Callable, Collection, Dict, Iterable, List, NamedTuple
-from typing import Optional, Sequence
+from typing import Optional, Pattern, Tuple, Union
 
 try:
     import pw_presubmit
@@ -40,7 +40,8 @@ except ImportError:
         os.path.abspath(__file__))))
     import pw_presubmit
 
-from pw_presubmit import file_summary, list_git_files, log_run, plural
+from pw_presubmit import cli, git_repo
+from pw_presubmit.tools import exclude_paths, file_summary, log_run, plural
 
 _LOG: logging.Logger = logging.getLogger(__name__)
 
@@ -98,20 +99,18 @@ def _check_files(files, formatter: Formatter) -> Dict[Path, str]:
 
 
 def _clang_format(*args: str, **kwargs) -> bytes:
-    return log_run('clang-format',
-                   '--style=file',
-                   *args,
+    return log_run(['clang-format', '--style=file', *args],
                    stdout=subprocess.PIPE,
                    check=True,
                    **kwargs).stdout
 
 
-def check_c_format(files: Iterable[Path]) -> Dict[Path, str]:
+def clang_format_check(files: Iterable[Path]) -> Dict[Path, str]:
     """Checks formatting; returns {path: diff} for files with bad formatting."""
     return _check_files(files, lambda path, _: _clang_format(path))
 
 
-def fix_c_format(files: Iterable) -> None:
+def clang_format_fix(files: Iterable) -> None:
     """Fixes formatting for the provided files in place."""
     _clang_format('-i', *files)
 
@@ -119,9 +118,7 @@ def fix_c_format(files: Iterable) -> None:
 def check_gn_format(files: Iterable[Path]) -> Dict[Path, str]:
     """Checks formatting; returns {path: diff} for files with bad formatting."""
     return _check_files(
-        files, lambda _, data: log_run('gn',
-                                       'format',
-                                       '--stdin',
+        files, lambda _, data: log_run(['gn', 'format', '--stdin'],
                                        input=data,
                                        stdout=subprocess.PIPE,
                                        check=True).stdout)
@@ -129,27 +126,23 @@ def check_gn_format(files: Iterable[Path]) -> Dict[Path, str]:
 
 def fix_gn_format(files: Iterable[Path]) -> None:
     """Fixes formatting for the provided files in place."""
-    log_run('gn', 'format', *files, check=True)
+    log_run(['gn', 'format', *files], check=True)
 
 
 def check_go_format(files: Iterable[Path]) -> Dict[Path, str]:
     """Checks formatting; returns {path: diff} for files with bad formatting."""
     return _check_files(
         files, lambda path, _: log_run(
-            'gofmt', path, stdout=subprocess.PIPE, check=True).stdout)
+            ['gofmt', path], stdout=subprocess.PIPE, check=True).stdout)
 
 
 def fix_go_format(files: Iterable[Path]) -> None:
     """Fixes formatting for the provided files in place."""
-    log_run('gofmt', '-w', *files, check=True)
+    log_run(['gofmt', '-w', *files], check=True)
 
 
 def _yapf(*args, **kwargs) -> subprocess.CompletedProcess:
-    return log_run('python',
-                   '-m',
-                   'yapf',
-                   '--parallel',
-                   *args,
+    return log_run(['python', '-m', 'yapf', '--parallel', *args],
                    capture_output=True,
                    **kwargs)
 
@@ -184,10 +177,38 @@ def fix_py_format(files: Iterable):
     _yapf('--in-place', *files, check=True)
 
 
-def print_format_check(
-        errors: Dict[Path, str],
-        show_fix_commands: bool,
-) -> None:
+_TRAILING_SPACE = re.compile(rb'[ \t]+$', flags=re.MULTILINE)
+
+
+def _check_trailing_space(paths: Iterable[Path], fix: bool) -> Dict[Path, str]:
+    """Checks for and optionally removes trailing whitespace."""
+    errors = {}
+
+    for path in paths:
+        with path.open('rb') as fd:
+            contents = fd.read()
+
+        corrected = _TRAILING_SPACE.sub(b'', contents)
+        if corrected != contents:
+            errors[path] = _diff(path, contents, corrected)
+
+            if fix:
+                with path.open('wb') as fd:
+                    fd.write(corrected)
+
+    return errors
+
+
+def check_trailing_space(files: Iterable[Path]) -> Dict[Path, str]:
+    return _check_trailing_space(files, fix=False)
+
+
+def fix_trailing_space(files: Iterable[Path]) -> None:
+    _check_trailing_space(files, fix=True)
+
+
+def print_format_check(errors: Dict[Path, str],
+                       show_fix_commands: bool) -> None:
     """Prints and returns the result of a check_*_format function."""
     if not errors:
         # Don't print anything in the all-good case.
@@ -221,11 +242,19 @@ class CodeFormat(NamedTuple):
 
 
 C_FORMAT: CodeFormat = CodeFormat(
-    'C and C++', frozenset(['.h', '.hh', '.hpp', '.c', '.cc', '.cpp']),
-    check_c_format, fix_c_format)
+    'C and C++',
+    frozenset(['.h', '.hh', '.hpp', '.c', '.cc', '.cpp', '.inc', '.inl']),
+    clang_format_check, clang_format_fix)
 
-GN_FORMAT: CodeFormat = CodeFormat('GN', ('.gn', '.gni'), check_gn_format,
-                                   fix_gn_format)
+PROTO_FORMAT: CodeFormat = CodeFormat('Protocol buffer', ('.proto', ),
+                                      clang_format_check, clang_format_fix)
+
+JAVA_FORMAT: CodeFormat = CodeFormat('Java', ('.java', ), clang_format_check,
+                                     clang_format_fix)
+
+JAVASCRIPT_FORMAT: CodeFormat = CodeFormat('JavaScript', ('.js', ),
+                                           clang_format_check,
+                                           clang_format_fix)
 
 GO_FORMAT: CodeFormat = CodeFormat('Go', ('.go', ), check_go_format,
                                    fix_go_format)
@@ -233,17 +262,43 @@ GO_FORMAT: CodeFormat = CodeFormat('Go', ('.go', ), check_go_format,
 PYTHON_FORMAT: CodeFormat = CodeFormat('Python', ('.py', ), check_py_format,
                                        fix_py_format)
 
-CODE_FORMATS: Sequence[CodeFormat] = (
+GN_FORMAT: CodeFormat = CodeFormat('GN', ('.gn', '.gni'), check_gn_format,
+                                   fix_gn_format)
+
+# TODO(pwbug/191): Add real code formatting support for Bazel and CMake
+BAZEL_FORMAT: CodeFormat = CodeFormat('Bazel', ('BUILD', ),
+                                      check_trailing_space, fix_trailing_space)
+
+CMAKE_FORMAT: CodeFormat = CodeFormat('CMake', ('CMakeLists.txt', '.cmake'),
+                                      check_trailing_space, fix_trailing_space)
+
+RST_FORMAT: CodeFormat = CodeFormat('reStructuredText', ('.rst', ),
+                                    check_trailing_space, fix_trailing_space)
+
+MARKDOWN_FORMAT: CodeFormat = CodeFormat('Markdown', ('.md', ),
+                                         check_trailing_space,
+                                         fix_trailing_space)
+
+CODE_FORMATS: Tuple[CodeFormat, ...] = (
     C_FORMAT,
-    GN_FORMAT,
+    JAVA_FORMAT,
+    JAVASCRIPT_FORMAT,
+    PROTO_FORMAT,
     GO_FORMAT,
     PYTHON_FORMAT,
+    GN_FORMAT,
+    BAZEL_FORMAT,
+    CMAKE_FORMAT,
+    RST_FORMAT,
+    MARKDOWN_FORMAT,
 )
 
 
-def presubmit_check(code_format: CodeFormat) -> Callable:
+def presubmit_check(code_format: CodeFormat, **filter_paths_args) -> Callable:
     """Creates a presubmit check function from a CodeFormat object."""
-    @pw_presubmit.filter_paths(endswith=code_format.extensions)
+    filter_paths_args.setdefault('endswith', code_format.extensions)
+
+    @pw_presubmit.filter_paths(**filter_paths_args)
     def check_code_format(ctx: pw_presubmit.PresubmitContext):
         errors = code_format.check(ctx.paths)
         print_format_check(
@@ -260,19 +315,22 @@ def presubmit_check(code_format: CodeFormat) -> Callable:
     return check_code_format
 
 
-PRESUBMIT_CHECKS: Sequence[Callable] = tuple(
-    presubmit_check(code_format) for code_format in CODE_FORMATS)
+def presubmit_checks(**filter_paths_args) -> Tuple[Callable, ...]:
+    """Returns a tuple with all supported code format presubmit checks."""
+    return tuple(
+        presubmit_check(fmt, **filter_paths_args) for fmt in CODE_FORMATS)
 
 
 class CodeFormatter:
     """Checks or fixes the formatting of a set of files."""
-    def __init__(self, files: Sequence[Path]):
+    def __init__(self, files: Iterable[Path]):
         self.paths = list(files)
         self._formats: Dict[CodeFormat, List] = collections.defaultdict(list)
 
-        for path in files:
+        for path in self.paths:
             for code_format in CODE_FORMATS:
-                if any(str(path).endswith(e) for e in code_format.extensions):
+                if any(path.as_posix().endswith(e)
+                       for e in code_format.extensions):
                     self._formats[code_format].append(path)
 
     def check(self) -> Dict[Path, str]:
@@ -293,42 +351,48 @@ class CodeFormatter:
                       plural(files, code_format.language + ' file'))
 
 
-def _file_summary(files: Iterable[Path], base: Path) -> List[str]:
+def _file_summary(files: Iterable[Union[Path, str]], base: Path) -> List[str]:
     try:
-        return file_summary(f.resolve().relative_to(base.resolve())
-                            for f in files)
+        return file_summary(
+            Path(f).resolve().relative_to(base.resolve()) for f in files)
     except ValueError:
         return []
 
 
-def main(paths: Sequence[Path], exclude, base: str, fix: bool) -> int:
+def format_paths_in_repo(paths: Collection[Union[Path, str]],
+                         exclude: Collection[Pattern[str]], fix: bool,
+                         base: str) -> int:
     """Checks or fixes formatting for files in a Git repo."""
-    files = [path.resolve() for path in paths if path.is_file()]
+    files = [Path(path).resolve() for path in paths if os.path.isfile(path)]
+    repo = git_repo.root() if git_repo.is_repo() else None
 
     # If this is a Git repo, list the original paths with git ls-files or diff.
-    if pw_presubmit.is_git_repo():
-        repo = pw_presubmit.git_repo_path()
-        if repo.samefile(Path.cwd()):
-            _LOG.info('Checking files in the %s repository', repo)
-        else:
-            _LOG.info(
-                'Checking files in the %s subdirectory of the %s repository',
-                Path.cwd().relative_to(repo), repo)
+    if repo:
+        _LOG.info(
+            'Formatting %s',
+            git_repo.describe_files(repo, Path.cwd(), base, paths, exclude))
 
         # Add files from Git and remove duplicates.
-        files = sorted(set(list_git_files(base, paths, exclude)) | set(files))
+        files = sorted(
+            set(exclude_paths(exclude, git_repo.list_files(base, paths)))
+            | set(files))
     elif base:
         _LOG.critical(
             'A base commit may only be provided if running from a Git repo')
         return 1
 
-    formatter = CodeFormatter(files)
+    return format_files(files, fix, repo=repo)
+
+
+def format_files(paths: Collection[Union[Path, str]],
+                 fix: bool,
+                 repo: Optional[Path] = None) -> int:
+    """Checks or fixes formatting for the specified files."""
+    formatter = CodeFormatter(Path(p) for p in paths)
 
     _LOG.info('Checking formatting for %s', plural(formatter.paths, 'file'))
-    _LOG.debug('Files to format:\n%s', '\n'.join(str(f) for f in files))
 
-    for line in _file_summary(
-            files, repo if pw_presubmit.is_git_repo() else Path.cwd()):
+    for line in _file_summary(paths, repo if repo else Path.cwd()):
         print(line, file=sys.stderr)
 
     errors = formatter.check()
@@ -348,19 +412,48 @@ def main(paths: Sequence[Path], exclude, base: str, fix: bool) -> int:
     return 0
 
 
-def argument_parser(parser=None) -> argparse.ArgumentParser:
-    if parser is None:
-        parser = argparse.ArgumentParser(description=__doc__)
+def arguments(git_paths: bool) -> argparse.ArgumentParser:
+    """Creates an argument parser for format_files or format_paths_in_repo."""
 
-    pw_presubmit.add_path_arguments(parser)
+    parser = argparse.ArgumentParser(description=__doc__)
+
+    if git_paths:
+        cli.add_path_arguments(parser)
+    else:
+
+        def existing_path(arg: str) -> Path:
+            path = Path(arg)
+            if not path.is_file():
+                raise argparse.ArgumentTypeError(
+                    f'{arg} is not a path to a file')
+
+            return path
+
+        parser.add_argument('paths',
+                            metavar='path',
+                            nargs='+',
+                            type=existing_path,
+                            help='File paths to check')
 
     parser.add_argument('--fix',
                         action='store_true',
                         help='Apply formatting fixes in place.')
-
     return parser
 
 
+def main() -> int:
+    """Check and fix formatting for source files."""
+    return format_paths_in_repo(**vars(arguments(git_paths=True).parse_args()))
+
+
 if __name__ == '__main__':
-    logging.basicConfig(format='%(message)s', level=logging.INFO)
-    sys.exit(main(**vars(argument_parser().parse_args())))
+    try:
+        # If pw_cli is available, use it to initialize logs.
+        from pw_cli import log
+
+        log.install(logging.INFO)
+    except ImportError:
+        # If pw_cli isn't available, display log messages like a simple print.
+        logging.basicConfig(format='%(message)s', level=logging.INFO)
+
+    sys.exit(main())

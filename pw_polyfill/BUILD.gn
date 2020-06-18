@@ -12,15 +12,19 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("public") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_polyfill") {
+pw_source_set("pw_polyfill") {
   public_configs = [ ":public" ]
+  remove_public_deps = [ "*" ]
   public_deps = [ ":standard_library" ]
   public = [
     "public/pw_polyfill/language_features.h",
@@ -33,8 +37,9 @@ config("overrides_config") {
   include_dirs = [ "public_overrides" ]
 }
 
-source_set("overrides") {
+pw_source_set("overrides") {
   public_configs = [ ":overrides_config" ]
+  remove_public_deps = [ "*" ]
   public_deps = [ ":standard_library" ]
   inputs = [
     "public_overrides/assert.h",
@@ -48,8 +53,9 @@ config("standard_library_public") {
   include_dirs = [ "standard_library_public" ]
 }
 
-source_set("standard_library") {
+pw_source_set("standard_library") {
   public_configs = [ ":standard_library_public" ]
+  remove_public_deps = [ "*" ]
   public = [
     "standard_library_public/pw_polyfill/standard_library/assert.h",
     "standard_library_public/pw_polyfill/standard_library/cstddef.h",
@@ -77,12 +83,14 @@ pw_test("default_cpp_test") {
 }
 
 pw_test("cpp11_test") {
+  remove_configs = [ "$dir_pw_build:cpp17" ]
   configs = [ "$dir_pw_build:cpp11" ]
   sources = [ "test.cc" ]
   deps = [ ":pw_polyfill" ]
 }
 
 pw_test("cpp14_test") {
+  remove_configs = [ "$dir_pw_build:cpp17" ]
   configs = [ "$dir_pw_build:cpp14" ]
   sources = [ "test.cc" ]
   deps = [ ":pw_polyfill" ]

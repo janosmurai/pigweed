@@ -12,40 +12,66 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
 import("$dir_pw_build/facade.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
+declare_args() {
+  # Backend for the pw_assert module.
+  pw_assert_BACKEND = ""
+}
 
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
 pw_facade("pw_assert") {
-  backend = dir_pw_assert_backend
+  backend = pw_assert_BACKEND
   public_configs = [ ":default_config" ]
-  public = [ "public/pw_assert/assert.h" ]
+  public = [
+    "public/pw_assert/assert.h",
+    "public/pw_assert/internal/assert_impl.h",
+  ]
   public_deps = [ dir_pw_preprocessor ]
 }
 
 pw_test_group("tests") {
-  tests = []
-  if (dir_pw_assert_backend != "") {
-    tests += [ ":assert_test" ]
-  }
+  tests = [
+    ":assert_backend_compile_test",
+    ":assert_facade_test",
+  ]
 }
 
-if (dir_pw_assert_backend != "") {
-  pw_test("assert_test") {
-    deps = [
-      ":pw_assert",
-      dir_pw_assert_backend,
-    ]
+# The assert facade test doesn't require a backend since a fake one is
+# provided.  However, since this doesn't depend on the backend it re-includes
+# the facade headers.
+pw_test("assert_facade_test") {
+  configs = [ ":default_config" ]  # For internal/assert_impl.h
+  sources = [
+    "assert_facade_test.cc",
+    "fake_backend.cc",
+    "public/pw_assert/internal/assert_impl.h",
+    "pw_assert_test/fake_backend.h",
+  ]
+  deps = [ dir_pw_status ]
 
-    sources = [
-      "assert_test.c",
-      "assert_test.cc",
-    ]
-  }
+  # TODO(frolv): Fix this test on the QEMU target.
+  enable_if = pw_build_EXECUTABLE_TARGET_TYPE != "lm3s6965evb_executable"
+}
+
+pw_test("assert_backend_compile_test") {
+  enable_if = pw_assert_BACKEND != ""
+  deps = [
+    ":pw_assert",
+    dir_pw_status,
+    pw_assert_BACKEND,
+  ]
+  sources = [
+    "assert_backend_compile_test.cc",
+    "assert_backend_compile_test_c.c",
+  ]
 }
 
 pw_doc_group("docs") {

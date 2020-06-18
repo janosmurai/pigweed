@@ -12,7 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-import("$dir_pw_toolchain/host_clang.gni")
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_toolchain/host_clang/toolchains.gni")
 import("$dir_pw_unit_test/test.gni")
 
 # Creates a libFuzzer-based fuzzer executable target.
@@ -34,16 +37,23 @@ template("pw_fuzzer") {
   can_fuzz = fuzzing_platforms + [ host_os ] - [ host_os ] != fuzzing_platforms
   can_fuzz = fuzzing_toolchains + [ current_toolchain ] -
              [ current_toolchain ] != fuzzing_toolchains && can_fuzz
-  if (can_fuzz) {
+  if (can_fuzz && pw_sanitizer != "") {
     # Build the actual fuzzer using the fuzzing config.
     pw_executable(target_name) {
-      configs = []
       forward_variables_from(invoker, "*", [ "visibility" ])
       forward_variables_from(invoker, [ "visibility" ])
+      if (!defined(configs)) {
+        configs = []
+      }
       configs += [
         "$dir_pw_fuzzer:default_config",
-        "$dir_pw_fuzzer:fuzzing",
+        "$dir_pw_fuzzer:sanitize_${pw_sanitizer}",
       ]
+      if (oss_fuzz_enabled) {
+        configs += [ "$dir_pw_fuzzer:oss_fuzz" ]
+      } else {
+        configs += [ "$dir_pw_fuzzer:fuzzing" ]
+      }
 
       # Metadata for this fuzzer when used as part of a pw_test_group target.
       metadata = {
@@ -64,17 +74,15 @@ template("pw_fuzzer") {
   } else {
     # Build a unit test that exercise the fuzz target function.
     pw_test(target_name) {
+      # TODO(pwbug/195): Re-enable when there's better configurability for
+      # on-device fuzz testing.
+      enable_if = false
       sources = []
-      configs = []
       deps = []
       forward_variables_from(invoker, "*", [ "visibility" ])
       forward_variables_from(invoker, [ "visibility" ])
       sources += [ "$dir_pw_fuzzer/pw_fuzzer_disabled.cc" ]
-      configs += [ "$dir_pw_fuzzer:default_config" ]
-      deps += [
-        "$dir_pw_log",
-        "$dir_pw_unit_test",
-      ]
+      deps += [ "$dir_pw_fuzzer:run_as_unit_test" ]
     }
   }
 }

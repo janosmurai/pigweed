@@ -12,25 +12,32 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-import("$dir_pw_docgen/docs.gni")
-import("$dir_pw_unit_test/test.gni")
+# gn-format disable
+import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_build/facade.gni")
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_docgen/docs.gni")
+import("$dir_pw_fuzzer/fuzzer.gni")
+import("$dir_pw_unit_test/test.gni")
+import("backend.gni")
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_tokenizer") {
+pw_source_set("pw_tokenizer") {
   public_configs = [ ":default_config" ]
   public_deps = [
-    "$dir_pw_preprocessor",
-    "$dir_pw_span",
+    dir_pw_preprocessor,
+    dir_pw_span,
   ]
-  deps = [ "$dir_pw_varint" ]
+  deps = [ dir_pw_varint ]
   public = [
     "public/pw_tokenizer/pw_tokenizer_65599_fixed_length_hash.h",
     "public/pw_tokenizer/tokenize.h",
   ]
   sources = [
+    "encode_args.cc",
     "public/pw_tokenizer/config.h",
     "public/pw_tokenizer/internal/argument_types.h",
     "public/pw_tokenizer/internal/argument_types_macro_4_byte.h",
@@ -39,30 +46,66 @@ source_set("pw_tokenizer") {
     "public/pw_tokenizer/internal/pw_tokenizer_65599_fixed_length_80_hash_macro.h",
     "public/pw_tokenizer/internal/pw_tokenizer_65599_fixed_length_96_hash_macro.h",
     "public/pw_tokenizer/internal/tokenize_string.h",
+    "pw_tokenizer_private/encode_args.h",
     "tokenize.cc",
   ]
-  sources += public
-  friend = [
-    ":argument_types_test",
-    ":hash_test",
-  ]
+  friend = [ ":*" ]
 }
 
-source_set("base64") {
+# As a temporary workaround, if no backend is set, use an empty test backend so
+# that the test can define the handler function.
+# TODO(hepler): Switch this to a facade test when available.
+if (pw_tokenizer_GLOBAL_HANDLER_BACKEND == "" &&
+    pw_tokenizer_GLOBAL_HANDLER_WITH_PAYLOAD_BACKEND == "") {
+  # This is an empty library to use as the backend for global_handler and
+  # global_handler_with_payload tests.
+  pw_source_set("test_backend") {
+    visibility = [ ":*" ]
+  }
+
+  pw_tokenizer_GLOBAL_HANDLER_BACKEND = ":test_backend"
+  pw_tokenizer_GLOBAL_HANDLER_WITH_PAYLOAD_BACKEND = ":test_backend"
+
+  enable_global_handler_test = true
+} else {
+  enable_global_handler_test = false
+}
+
+pw_facade("global_handler") {
+  facade_name = "global_handler_facade"
+  backend = pw_tokenizer_GLOBAL_HANDLER_BACKEND
+
+  public_configs = [ ":default_config" ]
+  public = [ "public/pw_tokenizer/tokenize_to_global_handler.h" ]
+  sources = [ "tokenize_to_global_handler.cc" ]
+  public_deps = [ ":pw_tokenizer" ]
+}
+
+pw_facade("global_handler_with_payload") {
+  facade_name = "global_handler_with_payload_facade"
+  backend = pw_tokenizer_GLOBAL_HANDLER_WITH_PAYLOAD_BACKEND
+
+  public_configs = [ ":default_config" ]
+  public = [ "public/pw_tokenizer/tokenize_to_global_handler_with_payload.h" ]
+  sources = [ "tokenize_to_global_handler_with_payload.cc" ]
+  public_deps = [ ":pw_tokenizer" ]
+}
+
+pw_source_set("base64") {
   public_configs = [ ":default_config" ]
   public = [ "public/pw_tokenizer/base64.h" ]
-  sources = [ "base64.cc" ] + public
+  sources = [ "base64.cc" ]
   public_deps = [
-    "$dir_pw_preprocessor",
-    "$dir_pw_span",
+    dir_pw_preprocessor,
+    dir_pw_span,
   ]
-  deps = [ "$dir_pw_base64" ]
+  deps = [ dir_pw_base64 ]
 }
 
-source_set("decoder") {
+pw_source_set("decoder") {
   public_configs = [ ":default_config" ]
-  public_deps = [ "$dir_pw_span" ]
-  deps = [ "$dir_pw_varint" ]
+  public_deps = [ dir_pw_span ]
+  deps = [ dir_pw_varint ]
   public = [
     "public/pw_tokenizer/detokenize.h",
     "public/pw_tokenizer/token_database.h",
@@ -73,27 +116,26 @@ source_set("decoder") {
     "public/pw_tokenizer/internal/decode.h",
     "token_database.cc",
   ]
-  sources += public
-  friend = [
-    ":decode_test",
-    ":generate_decoding_test_data",
-  ]
+  friend = [ ":*" ]
 }
 
 # Executable for generating test data for the C++ and Python detokenizers. This
 # target should only be built for the host.
-executable("generate_decoding_test_data") {
+pw_executable("generate_decoding_test_data") {
   deps = [
     ":decoder",
     ":pw_tokenizer",
-    "$dir_pw_varint",
+    dir_pw_varint,
   ]
-  sources = [ "generate_decoding_test_data.cc" ]
+  sources = [
+    "generate_decoding_test_data.cc",
+    "tokenize_test_fakes.cc",
+  ]
 }
 
 # Executable for generating a test ELF file for elf_reader_test.py. A host
 # version of this binary is checked in for use in elf_reader_test.py.
-executable("elf_reader_test_binary") {
+pw_executable("elf_reader_test_binary") {
   deps = [
     ":pw_tokenizer",
     "$dir_pw_varint",
@@ -107,11 +149,14 @@ pw_test_group("tests") {
     ":argument_types_test",
     ":base64_test",
     ":decode_test",
+    ":detokenize_fuzzer",
     ":detokenize_test",
+    ":global_handlers_test",
     ":hash_test",
     ":simple_tokenize_test_cpp11",
     ":simple_tokenize_test_cpp14",
     ":simple_tokenize_test_cpp17",
+    ":token_database_fuzzer",
     ":token_database_test",
     ":tokenize_test",
   ]
@@ -124,9 +169,10 @@ pw_test_group("tests") {
 
 pw_test("argument_types_test") {
   sources = [
-    "argument_types_test.c",
     "argument_types_test.cc",
+    "argument_types_test_c.c",
     "pw_tokenizer_private/argument_types_test.h",
+    "tokenize_test_fakes.cc",
   ]
   deps = [ ":pw_tokenizer" ]
 }
@@ -153,10 +199,26 @@ pw_test("detokenize_test") {
   deps = [ ":decoder" ]
 }
 
+pw_test("global_handlers_test") {
+  sources = [
+    "global_handlers_test.cc",
+    "global_handlers_test_c.c",
+    "pw_tokenizer_private/tokenize_test.h",
+  ]
+  deps = [
+    ":global_handler",
+    ":global_handler_with_payload",
+  ]
+
+  # TODO(hepler): Switch this to a facade test when available.
+  enable_if = enable_global_handler_test
+}
+
 pw_test("hash_test") {
   sources = [
     "hash_test.cc",
     "pw_tokenizer_private/generated_hash_test_cases.h",
+    "tokenize_test_fakes.cc",
   ]
   deps = [ ":pw_tokenizer" ]
 }
@@ -166,6 +228,7 @@ pw_test("hash_test") {
 _simple_tokenize_test_sources = [
   "$dir_pw_varint/public/pw_varint/varint.h",
   "$dir_pw_varint/varint.cc",
+  "encode_args.cc",
   "public/pw_tokenizer/config.h",
   "public/pw_tokenizer/internal/argument_types.h",
   "public/pw_tokenizer/internal/argument_types_macro_4_byte.h",
@@ -176,8 +239,13 @@ _simple_tokenize_test_sources = [
   "public/pw_tokenizer/internal/tokenize_string.h",
   "public/pw_tokenizer/pw_tokenizer_65599_fixed_length_hash.h",
   "public/pw_tokenizer/tokenize.h",
+  "public/pw_tokenizer/tokenize_to_global_handler.h",
+  "public/pw_tokenizer/tokenize_to_global_handler_with_payload.h",
+  "pw_tokenizer_private/encode_args.h",
   "simple_tokenize_test.cc",
   "tokenize.cc",
+  "tokenize_to_global_handler.cc",
+  "tokenize_to_global_handler_with_payload.cc",
 ]
 _simple_tokenize_test_configs = [
   ":default_config",
@@ -185,19 +253,21 @@ _simple_tokenize_test_configs = [
 ]
 
 pw_test("simple_tokenize_test_cpp11") {
+  remove_configs = [ "$dir_pw_build:cpp17" ]
   configs = [ "$dir_pw_build:cpp11" ] + _simple_tokenize_test_configs
   sources = _simple_tokenize_test_sources
   deps = [ dir_pw_preprocessor ]
 }
 
 pw_test("simple_tokenize_test_cpp14") {
+  remove_configs = [ "$dir_pw_build:cpp17" ]
   configs = [ "$dir_pw_build:cpp14" ] + _simple_tokenize_test_configs
   sources = _simple_tokenize_test_sources
   deps = [ dir_pw_preprocessor ]
 }
 
 pw_test("simple_tokenize_test_cpp17") {
-  configs = [ "$dir_pw_build:cpp17" ] + _simple_tokenize_test_configs
+  configs = _simple_tokenize_test_configs
   sources = _simple_tokenize_test_sources
   deps = [ dir_pw_preprocessor ]
 }
@@ -210,8 +280,8 @@ pw_test("token_database_test") {
 pw_test("tokenize_test") {
   sources = [
     "pw_tokenizer_private/tokenize_test.h",
-    "tokenize_test.c",
     "tokenize_test.cc",
+    "tokenize_test_c.c",
   ]
   deps = [
     ":pw_tokenizer",
@@ -219,27 +289,46 @@ pw_test("tokenize_test") {
   ]
 }
 
+pw_fuzzer("token_database_fuzzer") {
+  sources = [ "token_database_fuzzer.cc" ]
+  deps = [
+    ":decoder",
+    "$dir_pw_fuzzer",
+    "$dir_pw_preprocessor",
+    "$dir_pw_span",
+  ]
+}
+
+pw_fuzzer("detokenize_fuzzer") {
+  sources = [ "detokenize_fuzzer.cc" ]
+  deps = [
+    ":decoder",
+    "$dir_pw_fuzzer",
+    "$dir_pw_preprocessor",
+  ]
+}
+
 declare_args() {
-  # pw_java_native_interface_include_dirs specifies the paths to use for
+  # pw_JAVA_NATIVE_INTERFACE_INCLUDE_DIRS specifies the paths to use for
   # building Java Native Interface libraries. If no paths are provided, targets
   # that require JNI may not build correctly.
   #
   # Example JNI include paths for a Linux system:
   #
-  #   pw_java_native_interface_include_dirs = [
+  #   pw_JAVA_NATIVE_INTERFACE_INCLUDE_DIRS = [
   #     "/usr/local/buildtools/java/jdk/include/",
   #     "/usr/local/buildtools/java/jdk/include/linux",
   #   ]
   #
-  pw_java_native_interface_include_dirs = []
+  pw_JAVA_NATIVE_INTERFACE_INCLUDE_DIRS = []
 }
 
 # Create a shared library for the tokenizer JNI wrapper. The include paths for
 # the JNI headers must be available in the system or provided with the
-# pw_java_native_interface_include_dirs variable.
-shared_library("detokenizer_jni") {
+# pw_JAVA_NATIVE_INTERFACE_INCLUDE_DIRS variable.
+pw_shared_library("detokenizer_jni") {
   public_configs = [ ":default_config" ]
-  include_dirs = pw_java_native_interface_include_dirs
+  include_dirs = pw_JAVA_NATIVE_INTERFACE_INCLUDE_DIRS
   sources = [ "java/dev/pigweed/tokenizer/detokenizer.cc" ]
   public_deps = [
     ":decoder",
@@ -249,4 +338,5 @@ shared_library("detokenizer_jni") {
 
 pw_doc_group("docs") {
   sources = [ "docs.rst" ]
+  inputs = [ "py/pw_tokenizer/encode.py" ]
 }

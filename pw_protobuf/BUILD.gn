@@ -12,18 +12,20 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
 import("$dir_pw_build/input_group.gni")
-import("$dir_pw_build/pw_executable.gni")
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_fuzzer/fuzzer.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_protobuf") {
+pw_source_set("pw_protobuf") {
   public_configs = [ ":default_config" ]
   public_deps = [
     "$dir_pw_status",
@@ -58,9 +60,9 @@ pw_doc_group("docs") {
 # Source files for pw_protobuf's protoc plugin.
 pw_input_group("codegen_protoc_plugin") {
   inputs = [
-    "py/pw_protobuf/codegen.py",
-    "py/pw_protobuf/methods.py",
-    "py/pw_protobuf/proto_structures.py",
+    "py/pw_protobuf/codegen_pwpb.py",
+    "py/pw_protobuf/plugin.py",
+    "py/pw_protobuf/proto_tree.py",
   ]
 }
 
@@ -90,16 +92,15 @@ pw_test("find_test") {
 }
 
 pw_test("codegen_test") {
-  deps = [
-    ":codegen_test_protos_cc",
-    ":pw_protobuf",
-  ]
+  deps = [ ":codegen_test_protos_pwpb" ]
   sources = [ "codegen_test.cc" ]
 }
 
 pw_proto_library("codegen_test_protos") {
   sources = [
     "pw_protobuf_protos/test_protos/full_test.proto",
+    "pw_protobuf_protos/test_protos/imported.proto",
+    "pw_protobuf_protos/test_protos/importer.proto",
     "pw_protobuf_protos/test_protos/proto2.proto",
     "pw_protobuf_protos/test_protos/repeated.proto",
   ]

@@ -60,8 +60,8 @@ Status Sectors::Find(FindMode find_mode,
     temp_sectors_to_skip_[sectors_to_skip++] = &FromAddress(address);
   }
 
-  DBG("Find sector with %zu bytes available, starting with sector %u, %s",
-      size,
+  DBG("Find sector with %u bytes available, starting with sector %u, %s",
+      unsigned(size),
       Index(last_new_),
       (find_mode == kAppendEntry) ? "Append" : "GC");
   for (size_t i = 0; i < sectors_to_skip; ++i) {
@@ -143,9 +143,9 @@ Status Sectors::Find(FindMode find_mode,
   // bytes
   if (non_empty_least_reclaimable_sector != nullptr) {
     *found_sector = non_empty_least_reclaimable_sector;
-    DBG("  Found a usable sector %u, with %zu B recoverable, in GC",
+    DBG("  Found a usable sector %u, with %u B recoverable, in GC",
         Index(*found_sector),
-        (*found_sector)->RecoverableBytes(sector_size_bytes));
+        unsigned((*found_sector)->RecoverableBytes(sector_size_bytes)));
     return Status::OK;
   }
 
@@ -153,6 +153,10 @@ Status Sectors::Find(FindMode find_mode,
   DBG("  Unable to find a usable sector");
   *found_sector = nullptr;
   return Status::RESOURCE_EXHAUSTED;
+}
+
+SectorDescriptor& Sectors::WearLeveledSectorFromIndex(size_t idx) const {
+  return descriptors_[(Index(last_new_) + 1 + idx) % descriptors_.size()];
 }
 
 // TODO: Consider breaking this function into smaller sub-chunks.
@@ -170,21 +174,25 @@ SectorDescriptor* Sectors::FindSectorToGarbageCollect(
   const span sectors_to_skip(temp_sectors_to_skip_, reserved_addresses.size());
 
   // Step 1: Try to find a sectors with stale keys and no valid keys (no
-  // relocation needed). If any such sectors are found, use the sector with the
-  // most reclaimable bytes.
-  for (auto& sector : descriptors_) {
+  // relocation needed). Use the first such sector found, as that will help the
+  // KVS "rotate" around the partition. Initially this would select the sector
+  // with the most reclaimable space, but that can cause GC sector selection to
+  // "ping-pong" between two sectors when updating large keys.
+  for (size_t i = 0; i < descriptors_.size(); ++i) {
+    SectorDescriptor& sector = WearLeveledSectorFromIndex(i);
     if ((sector.valid_bytes() == 0) &&
-        (sector.RecoverableBytes(sector_size_bytes) > candidate_bytes) &&
+        (sector.RecoverableBytes(sector_size_bytes) > 0) &&
         !Contains(sectors_to_skip, &sector)) {
       sector_candidate = &sector;
-      candidate_bytes = sector.RecoverableBytes(sector_size_bytes);
+      break;
     }
   }
 
   // Step 2: If step 1 yields no sectors, just find the sector with the most
   // reclaimable bytes but no addresses to avoid.
   if (sector_candidate == nullptr) {
-    for (auto& sector : descriptors_) {
+    for (size_t i = 0; i < descriptors_.size(); ++i) {
+      SectorDescriptor& sector = WearLeveledSectorFromIndex(i);
       if ((sector.RecoverableBytes(sector_size_bytes) > candidate_bytes) &&
           !Contains(sectors_to_skip, &sector)) {
         sector_candidate = &sector;
@@ -198,7 +206,8 @@ SectorDescriptor* Sectors::FindSectorToGarbageCollect(
   // spread to other sectors, including sectors that already have copies of the
   // current key being written.
   if (sector_candidate == nullptr) {
-    for (auto& sector : descriptors_) {
+    for (size_t i = 0; i < descriptors_.size(); ++i) {
+      SectorDescriptor& sector = WearLeveledSectorFromIndex(i);
       if ((sector.valid_bytes() > candidate_bytes) &&
           !Contains(sectors_to_skip, &sector)) {
         sector_candidate = &sector;
@@ -209,9 +218,9 @@ SectorDescriptor* Sectors::FindSectorToGarbageCollect(
   }
 
   if (sector_candidate != nullptr) {
-    DBG("Found sector %u to Garbage Collect, %zu recoverable bytes",
+    DBG("Found sector %u to Garbage Collect, %u recoverable bytes",
         Index(sector_candidate),
-        sector_candidate->RecoverableBytes(sector_size_bytes));
+        unsigned(sector_candidate->RecoverableBytes(sector_size_bytes)));
   } else {
     DBG("Unable to find sector to garbage collect!");
   }

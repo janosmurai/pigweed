@@ -12,8 +12,11 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-import("$dir_pw_docgen/docs.gni")
+# gn-format disable
+import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_docgen/docs.gni")
 config("default_config") {
   include_dirs = [ "public" ]
 }
@@ -22,19 +25,17 @@ config("backend_config") {
   include_dirs = [ "public_overrides" ]
 }
 
-if (dir_pw_assert_backend == dir_pw_assert_basic) {
-  source_set("pw_assert_basic") {
-    public_configs = [
-      ":backend_config",
-      ":default_config",
-    ]
-    deps = [ ":core" ]
-    public = [ "public_overrides/pw_assert_backend/assert_backend.h" ]
-    sources = public
-  }
+pw_source_set("pw_assert_basic") {
+  public_configs = [
+    ":backend_config",
+    ":default_config",
+  ]
+  deps = [ ":core" ]
+  public = [ "public_overrides/pw_assert_backend/assert_backend.h" ]
+  sources = public
 }
 
-source_set("core") {
+pw_source_set("core") {
   public_configs = [ ":default_config" ]
   deps = [
     "$dir_pw_assert:facade",

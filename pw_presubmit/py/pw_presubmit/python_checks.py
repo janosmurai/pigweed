@@ -16,9 +16,12 @@
 These checks assume that they are running in a preconfigured Python environment.
 """
 
-import os
-import sys
 import logging
+import os
+from pathlib import Path
+import re
+import sys
+from typing import List
 
 try:
     import pw_presubmit
@@ -29,7 +32,7 @@ except ImportError:
         os.path.abspath(__file__))))
     import pw_presubmit
 
-from pw_presubmit import call, filter_paths, PresubmitContext
+from pw_presubmit import call, filter_paths, git_repo
 
 _LOG = logging.getLogger(__name__)
 
@@ -39,20 +42,21 @@ def run_module(*args, **kwargs):
 
 
 @filter_paths(endswith='.py')
-def test_python_packages(ctx: PresubmitContext):
-    packages = pw_presubmit.find_python_packages(ctx.paths,
-                                                 repo=ctx.repository_root)
+def test_python_packages(ctx: pw_presubmit.PresubmitContext):
+    packages: List[Path] = []
+    for repo in ctx.repos:
+        packages += git_repo.find_python_packages(ctx.paths, repo=repo)
 
     if not packages:
         _LOG.info('No Python packages were found.')
         return
 
     for package in packages:
-        call('python', os.path.join(package, 'setup.py'), 'test', cwd=package)
+        call('python', package / 'setup.py', 'test', cwd=package)
 
 
 @filter_paths(endswith='.py')
-def pylint(ctx: PresubmitContext):
+def pylint(ctx: pw_presubmit.PresubmitContext):
     disable_checkers = [
         # BUG(pwbug/22): Hanging indent check conflicts with YAPF 0.29. For
         # now, use YAPF's version even if Pylint is doing the correct thing
@@ -67,12 +71,15 @@ def pylint(ctx: PresubmitContext):
         '--jobs=0',
         f'--disable={",".join(disable_checkers)}',
         *ctx.paths,
-        cwd=ctx.repository_root,
+        cwd=ctx.root,
     )
 
 
-@filter_paths(endswith='.py', exclude=r'(?:.+/)?setup\.py')
-def mypy(ctx: PresubmitContext):
+_SETUP_PY = re.compile(r'(?:.+/)?setup\.py')
+
+
+@filter_paths(endswith='.py')
+def mypy(ctx: pw_presubmit.PresubmitContext):
     env = os.environ.copy()
     # Use this environment variable to force mypy to colorize output.
     # See https://github.com/python/mypy/issues/7771
@@ -80,7 +87,7 @@ def mypy(ctx: PresubmitContext):
 
     run_module(
         'mypy',
-        *ctx.paths,
+        *(p for p in ctx.paths if not _SETUP_PY.fullmatch(p.as_posix())),
         '--pretty',
         '--color-output',
         # TODO(pwbug/146): Some imports from installed packages fail. These
@@ -89,8 +96,14 @@ def mypy(ctx: PresubmitContext):
         env=env)
 
 
-ALL = (
+_ALL_CHECKS = (
     test_python_packages,
     pylint,
     mypy,
 )
+
+
+def all_checks(endswith='.py', **filter_paths_args):
+    return tuple(
+        filter_paths(endswith=endswith, **filter_paths_args)(function)
+        for function in _ALL_CHECKS)

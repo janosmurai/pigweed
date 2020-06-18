@@ -16,6 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pw_preprocessor/compiler.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +31,10 @@ size_t pw_VarintDecode(const void* input, size_t input_size, uint64_t* output);
 size_t pw_VarintZigZagDecode(const void* input,
                              size_t input_size,
                              int64_t* output);
+
+// Returns the size of an when encoded as a varint.
+size_t pw_VarintEncodedSize(uint64_t integer);
+size_t pw_VarintZigZagEncodedSize(int64_t integer);
 
 #ifdef __cplusplus
 
@@ -64,8 +70,11 @@ constexpr std::make_unsigned_t<T> ZigZagEncode(T n) {
 }
 
 // ZigZag decodes a signed integer.
+// The calculation is done modulo std::numeric_limits<T>::max()+1, so the
+// unsigned integer overflows are intentional.
 template <typename T>
-constexpr std::make_signed_t<T> ZigZagDecode(T n) {
+constexpr std::make_signed_t<T> ZigZagDecode(T n)
+    PW_NO_SANITIZE("unsigned-integer-overflow") {
   static_assert(std::is_unsigned<T>(),
                 "Zig-zag decoding is for unsigned integers");
   return static_cast<std::make_signed_t<T>>((n >> 1) ^ (~(n & 1) + 1));
@@ -122,6 +131,16 @@ inline size_t Decode(const span<const std::byte>& input, int64_t* value) {
 
 inline size_t Decode(const span<const std::byte>& input, uint64_t* value) {
   return pw_VarintDecode(input.data(), input.size(), value);
+}
+
+// Returns a size of an integer when encoded as a varint.
+inline size_t EncodedSize(uint64_t integer) {
+  return pw_VarintEncodedSize(integer);
+}
+
+// Returns a size of an signed integer when ZigZag encoded as a varint.
+inline size_t ZigZagEncodedSize(int64_t integer) {
+  return pw_VarintZigZagEncodedSize(integer);
 }
 
 }  // namespace varint

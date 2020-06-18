@@ -36,9 +36,17 @@ def argument_parser(
         parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument('--language', default='cc', help='Output language')
+    parser.add_argument('--custom-plugin', help='Custom protoc plugin')
     parser.add_argument('--module-path',
                         required=True,
                         help='Path to the module containing the .proto files')
+    parser.add_argument('--include-paths',
+                        default=[],
+                        type=lambda arg: arg.split(';'),
+                        help='protoc include paths')
+    parser.add_argument('--include-file',
+                        type=argparse.FileType('r'),
+                        help='File containing additional protoc include paths')
     parser.add_argument('--out-dir',
                         required=True,
                         help='Output directory for generated code')
@@ -61,11 +69,20 @@ def protoc_go_args(args: argparse.Namespace) -> List[str]:
     return ['--go_out', f'plugins=grpc:{args.out_dir}']
 
 
+def protoc_nanopb_args(args: argparse.Namespace) -> List[str]:
+    # nanopb needs to know of the include path to parse *.options files
+    return [
+        '--plugin', f'protoc-gen-nanopb={args.custom_plugin}',
+        f'--nanopb_out=-I{args.module_path}:{args.out_dir}'
+    ]
+
+
 # Default additional protoc arguments for each supported language.
 # TODO(frolv): Make these overridable with a command-line argument.
 DEFAULT_PROTOC_ARGS: Dict[str, Callable[[argparse.Namespace], List[str]]] = {
     'cc': protoc_cc_args,
     'go': protoc_go_args,
+    'nanopb': protoc_nanopb_args,
 }
 
 
@@ -81,13 +98,24 @@ def main() -> int:
         _LOG.error('Unsupported language: %s', args.language)
         return 1
 
-    return pw_cli.process.run(
+    include_paths = [f'-I{path}' for path in args.include_paths]
+    include_paths += [f'-I{line.strip()}' for line in args.include_file]
+
+    process = pw_cli.process.run(
         'protoc',
         '-I',
         args.module_path,
+        '-I',
+        args.out_dir,
+        *include_paths,
         *lang_args,
         *args.protos,
-    ).returncode
+    )
+
+    if process.returncode != 0:
+        print(process.output.decode(), file=sys.stderr)
+
+    return process.returncode
 
 
 if __name__ == '__main__':

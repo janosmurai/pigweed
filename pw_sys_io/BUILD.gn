@@ -12,15 +12,23 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
 import("$dir_pw_build/facade.gni")
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
+declare_args() {
+  # Backend for the pw_sys_io module.
+  pw_sys_io_BACKEND = ""
+}
 
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
 pw_facade("pw_sys_io") {
-  backend = dir_pw_sys_io_backend
+  backend = pw_sys_io_BACKEND
   public_configs = [ ":default_config" ]
   public_deps = [
     "$dir_pw_span",
@@ -29,7 +37,7 @@ pw_facade("pw_sys_io") {
   public = [ "public/pw_sys_io/sys_io.h" ]
 }
 
-source_set("default_putget_bytes") {
+pw_source_set("default_putget_bytes") {
   deps = [ ":facade" ]
   sources = [ "sys_io.cc" ]
 }

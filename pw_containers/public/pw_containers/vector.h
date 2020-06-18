@@ -14,6 +14,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <initializer_list>
 #include <iterator>
@@ -134,7 +135,13 @@ class Vector : public Vector<T, vector_impl::kGeneric> {
 
   // Vector entries are stored as uninitialized memory blocks aligned correctly
   // for the type. Elements are initialized on demand with placement new.
-  std::aligned_storage_t<sizeof(T), alignof(T)> array_[kMaxSize];
+  //
+  // This uses std::array instead of a C array to support zero-length Vectors.
+  // Zero-length C arrays are non-standard, but std::array<T, 0> is valid.
+  // The alignas specifier is required ensure that a zero-length array is
+  // aligned the same as an array with elements.
+  alignas(T) std::array<std::aligned_storage_t<sizeof(T), alignof(T)>,
+                        kMaxSize> array_;
 };
 
 // Defines the generic-sized Vector<T> specialization, which serves as the base
@@ -222,9 +229,9 @@ class Vector<T, vector_impl::kGeneric> {
   // access the data, down-cast this to a Vector with a known max size, and
   // return a pointer to the start of the array, which is the same for all
   // vectors with explicit max size.
-  T* data() noexcept { return static_cast<Vector<T, 1>*>(this)->array(); }
+  T* data() noexcept { return static_cast<Vector<T, 0>*>(this)->array(); }
   const T* data() const noexcept {
-    return static_cast<const Vector<T, 1>*>(this)->array();
+    return static_cast<const Vector<T, 0>*>(this)->array();
   }
 
   // Iterate

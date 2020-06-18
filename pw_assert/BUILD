@@ -29,6 +29,7 @@ pw_cc_library(
     name = "facade",
     hdrs = [
         "public/pw_assert/assert.h",
+        "public/pw_assert/internal/assert_impl.h",
     ],
     includes = ["public"],
     deps = [
@@ -53,10 +54,27 @@ pw_cc_library(
 )
 
 pw_cc_test(
-    name = "test",
+    name = "assert_facade_test",
     srcs = [
-        "assert_test.c",
-        "assert_test.cc",
+        "assert_facade_test.cc",
+        "fake_backend.cc",
+        "public/pw_assert/internal/assert_impl.h",
+        "pw_assert_test/fake_backend.h",
+    ],
+    deps = [
+        ":facade",
+        "//pw_preprocessor",
+        "//pw_span",
+        "//pw_string",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "assert_backend_compile_test",
+    srcs = [
+        "assert_backend_compile_test_c.c",
+        "assert_backend_compile_test.cc",
     ],
     deps = [
         ":backend",

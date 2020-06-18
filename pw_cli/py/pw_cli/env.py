@@ -24,10 +24,13 @@ def pigweed_environment_parser() -> envparse.EnvironmentParser:
 
     parser.add_var('PW_BOOTSTRAP_PYTHON')
     parser.add_var('PW_CARGO_SETUP', type=envparse.strict_bool, default=False)
-    parser.add_var('PW_DISABLE_PRESUBMIT_HOOK_WARNING')
+    parser.add_var('PW_ENABLE_PRESUBMIT_HOOK_WARNING', default=False)
     parser.add_var('PW_EMOJI', type=envparse.strict_bool, default=False)
     parser.add_var('PW_ENVSETUP')
     parser.add_var('PW_ENVSETUP_FULL')
+    parser.add_var('PW_ENVSETUP_NO_BANNER',
+                   type=envparse.strict_bool,
+                   default=False)
     parser.add_var('PW_ENVSETUP_QUIET',
                    type=envparse.strict_bool,
                    default=False)
@@ -35,6 +38,7 @@ def pigweed_environment_parser() -> envparse.EnvironmentParser:
     parser.add_var('PW_SKIP_BOOTSTRAP')
     parser.add_var('PW_SUBPROCESS', type=envparse.strict_bool, default=False)
     parser.add_var('PW_USE_COLOR', type=envparse.strict_bool, default=False)
+    parser.add_var('PW_USE_GCS_ENVSETUP', type=envparse.strict_bool)
 
     parser.add_var('PW_PIGWEED_CIPD_INSTALL_DIR')
     parser.add_var('PW_LUCI_CIPD_INSTALL_DIR')
@@ -44,6 +48,9 @@ def pigweed_environment_parser() -> envparse.EnvironmentParser:
     parser.add_var('PW_VIRTUALENV_REQUIREMENTS')
     parser.add_var('PW_VIRTUALENV_SETUP_PY_ROOTS')
     parser.add_var('PW_CARGO_PACKAGE_FILES')
+
+    parser.add_var('PW_BRANDING_BANNER')
+    parser.add_var('PW_BRANDING_BANNER_COLOR', default='magenta')
 
     return parser
 

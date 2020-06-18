@@ -101,24 +101,57 @@
 #define _PW_MAKE_COMMA_IF_CALLED(...) ,
 
 // Expands to a comma followed by __VA_ARGS__, if __VA_ARGS__ is non-empty.
-// Otherwise, expands to nothing. This is useful when calling a function with
-// __VA_ARGS__, since it removes the extra comma when no arguments are
-// provided.
+// Otherwise, expands to nothing. This is useful when passing __VA_ARGS__ to a
+// variadic function or template parameter list, since it removes the extra
+// comma when no arguments are provided. PW_COMMA_ARGS must NOT be used when
+// invoking a macro from another macro.
 //
 // This is a more flexible, standard-compliant version of ##__VA_ARGS__. Unlike
 // ##__VA_ARGS__, this can be used to eliminate an unwanted comma when
 // __VA_ARGS__ expands to an empty argument because an outer macro was called
 // with __VA_ARGS__ instead of ##__VA_ARGS__.
 //
-// This can be used to call variadic functions or provide variadic template
-// parameters from a macro. For example:
+// PW_COMMA_ARGS must NOT be used to conditionally include a comma when invoking
+// a macro from another macro. PW_COMMA_ARGS only functions correctly when the
+// macro expands to C or C++ code! When invoking one macro from another, simply
+// pass __VA_ARGS__. Only the final macro that expands to C/C++ code should use
+// PW_COMMA_ARGS.
 //
-//  #define MY_PRINTF(fmt, ...) MY_PRINTF_IMPL(fmt, __VA_ARGS__)
-//  #define MY_PRINTF_IMPL(fmt, ...) printf(fmt PW_COMMA_ARGS(__VA_ARGS__))
-//
+// For example, the following does NOT work:
+/*
+     #define MY_MACRO(fmt, ...) \
+         NESTED_MACRO(fmt PW_COMMA_ARGS(__VA_ARGS__))  // BAD! Do not do this!
+
+   Instead, only use PW_COMMA_ARGS when the macro expands to C/C++ code:
+
+     #define MY_MACRO(fmt, ...) \
+         NESTED_MACRO(fmt, __VA_ARGS__)  // Pass __VA_ARGS__ to nested macros
+
+     #define NESTED_MACRO(fmt, ...) \
+         printf(fmt PW_COMMA_ARGS(__VA_ARGS__))  // PW_COMMA_ARGS is OK here
+*/
 #define PW_COMMA_ARGS(...) _PW_COMMA_ARGS(PW_HAS_ARGS(__VA_ARGS__), __VA_ARGS__)
 
 #define _PW_COMMA_ARGS(has_args, ...) _PW_COMMA_ARGS_X(has_args, __VA_ARGS__)
 #define _PW_COMMA_ARGS_X(has_args, ...) _PW_COMMA_ARGS_##has_args(__VA_ARGS__)
 #define _PW_COMMA_ARGS_0(...)                // no args, no comma
 #define _PW_COMMA_ARGS_1(...) , __VA_ARGS__  // comma, followed by args
+
+// Allows calling a different function-like macro based on the number of
+// arguments.  For example:
+//
+//   #define ARG_PRINT(...)  PW_DELEGATE_BY_ARG_COUNT(_ARG_PRINT, __VA_ARGS__)
+//   #define _ARG_PRINT1(a)        LOG_INFO("1 arg: %s", a)
+//   #define _ARG_PRINT2(a, b)     LOG_INFO("2 args: %s, %s", a, b)
+//   #define _ARG_PRINT3(a, b, c)  LOG_INFO("3 args: %s, %s, %s", a, b, c)
+//
+// This can the be called in code:
+//    ARG_PRINT("a");            // Outputs: 1 arg: a
+//    ARG_PRINT("a", "b");       // Outputs: 2 arg: a, b
+//    ARG_PRINT("a", "b", "c");  // Outputs: 3 arg: a, b, c
+//
+#define PW_DELEGATE_BY_ARG_COUNT(func, ...) \
+  _PW_DELEGATE_BY_ARG_COUNT(func, PW_ARG_COUNT(__VA_ARGS__))(__VA_ARGS__)
+#define _PW_DELEGATE_BY_ARG_COUNT_EXPANDED(name, n) name##n
+#define _PW_DELEGATE_BY_ARG_COUNT(name, n) \
+  _PW_DELEGATE_BY_ARG_COUNT_EXPANDED(name, n)

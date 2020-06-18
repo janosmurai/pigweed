@@ -33,6 +33,7 @@ pw_cc_library(
     includes = ["public"],
     deps = [
         "//pw_polyfill",
+        "//pw_preprocessor",
         "//pw_span",
     ],
 )
@@ -40,7 +41,7 @@ pw_cc_library(
 pw_cc_test(
     name = "varint_test",
     srcs = [
-        "varint_test.c",
+        "varint_test_c.c",
         "varint_test.cc",
     ],
     deps = [

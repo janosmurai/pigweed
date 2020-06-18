@@ -14,6 +14,7 @@
 
 pw_add_module_library(pw_tokenizer
   SOURCES
+    encode_args.cc
     tokenize.cc
   PUBLIC_DEPS
     pw_preprocessor
@@ -44,6 +45,33 @@ pw_add_module_library(pw_tokenizer.decoder
     pw_varint
 )
 
+pw_add_facade(pw_tokenizer.global_handler
+  SOURCES
+    tokenize_to_global_handler.cc
+  PUBLIC_DEPS
+    pw_tokenizer
+)
+
+pw_add_facade(pw_tokenizer.global_handler_with_payload
+  SOURCES
+    tokenize_to_global_handler_with_payload.cc
+  PUBLIC_DEPS
+    pw_tokenizer
+)
+
+# TODO(hepler): Use an empty backend that makes tests possible, for now.
+add_library(pw_tokenizer.global_handler.backend INTERFACE)
+target_link_libraries(pw_tokenizer.global_handler.backend
+  INTERFACE
+    pw_tokenizer.test_backend)
+
+add_library(pw_tokenizer.global_handler_with_payload.backend INTERFACE)
+target_link_libraries(pw_tokenizer.global_handler_with_payload.backend
+  INTERFACE
+    pw_tokenizer.test_backend)
+
+add_library(pw_tokenizer.test_backend INTERFACE)
+
 # Executable for generating test data for the C++ and Python detokenizers. This
 # target should only be built for the host.
 add_executable(pw_tokenizer.generate_decoding_test_data EXCLUDE_FROM_ALL
@@ -64,7 +92,7 @@ set_target_properties(pw_tokenizer.elf_reader_test_binary PROPERTIES
 
 pw_add_test(pw_tokenizer.argument_types_test
   SOURCES
-    argument_types_test.c
+    argument_types_test_c.c
     argument_types_test.cc
   DEPS
     pw_tokenizer
@@ -104,6 +132,18 @@ pw_add_test(pw_tokenizer.detokenize_test
     pw_tokenizer
 )
 
+pw_add_test(pw_tokenizer.global_handlers_test
+  SOURCES
+    global_handlers_test_c.c
+    global_handlers_test.cc
+  DEPS
+    pw_tokenizer.global_handler
+    pw_tokenizer.global_handler_with_payload
+  GROUPS
+    modules
+    pw_tokenizer
+)
+
 pw_add_test(pw_tokenizer.hash_test
   SOURCES
     hash_test.cc
@@ -126,7 +166,7 @@ pw_add_test(pw_tokenizer.token_database_test
 
 pw_add_test(pw_tokenizer.tokenize_test
   SOURCES
-    tokenize_test.c
+    tokenize_test_c.c
     tokenize_test.cc
   DEPS
     pw_varint

@@ -97,7 +97,7 @@ def pw_root(ctx: DoctorContext):
 @register_into(CHECKS)
 def git_hook(ctx: DoctorContext):
     """Check that presubmit git hook is installed."""
-    if 'PW_DISABLE_PRESUBMIT_HOOK_WARNING' in os.environ:
+    if not os.environ.get('PW_ENABLE_PRESUBMIT_HOOK_WARNING'):
         return
 
     try:
@@ -187,7 +187,55 @@ def cipd(ctx: DoctorContext):
                         path, os.environ['PATH'])
 
 
-def main(strict=False, checks=None):
+@register_into(CHECKS)
+def cipd_versions(ctx: DoctorContext):
+    """Check cipd is set up correctly and in use."""
+    try:
+        root = pathlib.Path(os.environ['PW_ROOT']).resolve()
+    except KeyError:
+        return  # This case is handled elsewhere.
+
+    versions_path = root.joinpath('.cipd', 'pigweed', '.versions')
+    # Deliberately not checking luci.json--it's not required to be up-to-date.
+    json_path = root.joinpath('pw_env_setup', 'py', 'pw_env_setup',
+                              'cipd_setup', 'pigweed.json')
+
+    with json_path.open() as ins:
+        packages = json.load(ins)
+
+    for package in packages:
+        ctx.debug('checking version of %s', package['path'])
+        name = [
+            part for part in package['path'].split('/') if '{' not in part
+        ][-1]
+        path = versions_path.joinpath(f'{name}.cipd_version')
+        if not path.is_file():
+            ctx.debug('no version file')
+            continue
+
+        with path.open() as ins:
+            installed = json.load(ins)
+
+        describe = (
+            'cipd',
+            'describe',
+            installed['package_name'],
+            '-version',
+            installed['instance_id'],
+        )
+        ctx.debug('%s', ' '.join(describe))
+        output_raw = subprocess.check_output(describe).decode()
+        ctx.debug('output: %r', output_raw)
+        output = output_raw.split()
+
+        for tag in package['tags']:
+            if tag not in output:
+                ctx.error(
+                    'CIPD package %s is out of date, please rerun bootstrap',
+                    installed['package_name'])
+
+
+def doctor(strict=False, checks=None):
     """Run all the Check subclasses defined in this file."""
 
     ctx = DoctorContext(strict=strict)
@@ -211,27 +259,23 @@ def main(strict=False, checks=None):
     if ctx.failures:
         ctx.info('Failed checks: %s', ', '.join(ctx.failures))
     else:
-        ctx.info('Pigweed environment passes all checks!')
+        ctx.info('Environment passes all checks!')
     return len(ctx.failures)
 
 
-def argument_parser(
-        parser: argparse.ArgumentParser = None) -> argparse.ArgumentParser:
-    """Create argument parser."""
-
-    if parser is None:
-        parser = argparse.ArgumentParser(description=__doc__)
-
+def main() -> int:
+    """Check that the environment is set up correctly for Pigweed."""
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--strict',
         action='store_true',
         help='Run additional checks.',
     )
 
-    return parser
+    return doctor(**vars(parser.parse_args()))
 
 
 if __name__ == '__main__':
     # By default, display log messages like a simple print statement.
     logging.basicConfig(format='%(message)s', level=logging.INFO)
-    sys.exit(main(**vars(argument_parser().parse_args())))
+    sys.exit(main())

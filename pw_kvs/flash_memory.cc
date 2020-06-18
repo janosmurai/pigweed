@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#define PW_LOG_MODULE_NAME "KVS"
+
 #include "pw_kvs/flash_memory.h"
 
 #include <algorithm>
@@ -111,10 +113,10 @@ bool FlashPartition::AppearsErased(span<const byte> data) const {
 
 Status FlashPartition::CheckBounds(Address address, size_t length) const {
   if (address + length > size_bytes()) {
-    PW_LOG_ERROR("Attempted out-of-bound flash memory access (address: %" PRIu32
-                 " length: %zu)",
-                 address,
-                 length);
+    PW_LOG_ERROR(
+        "Attempted out-of-bound flash memory access (address: %u length: %u)",
+        unsigned(address),
+        unsigned(length));
     return Status::OUT_OF_RANGE;
   }
   return Status::OK;

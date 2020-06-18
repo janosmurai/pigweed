@@ -46,8 +46,17 @@
 //     ... implementation here ...
 //   }
 //
+
+// When compiling for host using MinGW, use gnu_printf() rather than printf()
+// to support %z format specifiers.
+#if __USE_MINGW_ANSI_STDIO
+#define _PW_PRINTF_FORMAT_TYPE gnu_printf
+#else
+#define _PW_PRINTF_FORMAT_TYPE printf
+#endif  // __USE_MINGW_ANSI_STDIO
+
 #define PW_PRINTF_FORMAT(format_index, parameter_index) \
-  __attribute__((format(printf, format_index, parameter_index)))
+  __attribute__((format(_PW_PRINTF_FORMAT_TYPE, format_index, parameter_index)))
 
 // Places a variable in the specified linker section and directs the compiler
 // to keep the variable, even if it is not used. Depending on the linker
@@ -75,3 +84,22 @@
 //   }
 //
 #define PW_UNREACHABLE __builtin_unreachable()
+
+// Indicate to a sanitizer compiler runtime to skip the named check in the
+// associated function.
+// Example:
+//
+//   uint32_t djb2(const void* buf, size_t len)
+//       PW_NO_SANITIZE("unsigned-integer-overflow"){
+//     uint32_t hash = 5381;
+//     const uint8_t* u8 = static_cast<const uint8_t*>(buf);
+//     for (size_t i = 0; i < len; ++i) {
+//       hash = (hash * 33) + u8[i]; /* hash * 33 + c */
+//     }
+//     return hash;
+//   }
+#if __clang__
+#define PW_NO_SANITIZE(check) __attribute__((no_sanitize(check)))
+#else
+#define PW_NO_SANITIZE(check)
+#endif  // __clang__

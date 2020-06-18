@@ -12,14 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
-
 config("default_config") {
   include_dirs = [ "public" ]
 }
 
-source_set("pw_checksum") {
+pw_source_set("pw_checksum") {
   public_configs = [ ":default_config" ]
   public = [ "public/pw_checksum/ccitt_crc16.h" ]
   sources = [ "ccitt_crc16.cc" ] + public
@@ -33,8 +36,8 @@ pw_test_group("tests") {
 pw_test("ccitt_crc16_test") {
   deps = [ ":pw_checksum" ]
   sources = [
-    "ccitt_crc16_test.c",
     "ccitt_crc16_test.cc",
+    "ccitt_crc16_test_c.c",
   ]
 }
 

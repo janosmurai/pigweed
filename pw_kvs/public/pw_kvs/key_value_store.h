@@ -188,10 +188,7 @@ class KeyValueStore {
   // recovery, will do any needed repairing of corruption. Does garbage
   // collection of part of the KVS, typically a single sector or similar unit
   // that makes sense for the KVS implementation.
-  Status PartialMaintenance() {
-    CheckForErrors();
-    return GarbageCollect(span<const Address>());
-  }
+  Status PartialMaintenance();
 
   void LogDebugInfo() const;
 
@@ -339,7 +336,7 @@ class KeyValueStore {
         "as_bytes(span(&value, 1)) or as_writable_bytes(span(&value, 1)).");
   }
 
-  void InitializeMetadata();
+  Status InitializeMetadata();
   Status LoadEntry(Address entry_address, Address* next_entry_address);
   Status ScanForEntry(const SectorDescriptor& sector,
                       Address start_address,
@@ -401,12 +398,19 @@ class KeyValueStore {
                     span<const std::byte> value,
                     EntryState new_state,
                     EntryMetadata* prior_metadata = nullptr,
-                    size_t prior_size = 0);
+                    const internal::Entry* prior_entry = nullptr);
 
-  EntryMetadata UpdateKeyDescriptor(const Entry& new_entry,
-                                    std::string_view key,
+  EntryMetadata CreateOrUpdateKeyDescriptor(const Entry& new_entry,
+                                            std::string_view key,
+                                            EntryMetadata* prior_metadata,
+                                            size_t prior_size);
+
+  EntryMetadata UpdateKeyDescriptor(const Entry& entry,
+                                    Address new_address,
                                     EntryMetadata* prior_metadata,
                                     size_t prior_size);
+
+  Status GetAddressesForWrite(Address* write_addresses, size_t write_size);
 
   Status GetSectorForWrite(SectorDescriptor** sector,
                            size_t entry_size,
@@ -420,7 +424,7 @@ class KeyValueStore {
 
   StatusWithSize CopyEntryToSector(Entry& entry,
                                    SectorDescriptor* new_sector,
-                                   Address& new_address);
+                                   Address new_address);
 
   Status RelocateEntry(const EntryMetadata& metadata,
                        KeyValueStore::Address& address,
@@ -436,6 +440,12 @@ class KeyValueStore {
 
   Status GarbageCollectSector(SectorDescriptor& sector_to_gc,
                               span<const Address> addresses_to_skip);
+
+  // Ensure that all entries are on the primary (first) format. Entries that are
+  // not on the primary format are rewritten.
+  //
+  // Return: status + number of entries updated.
+  StatusWithSize UpdateEntriesToPrimaryFormat();
 
   Status AddRedundantEntries(EntryMetadata& metadata);
 
@@ -468,6 +478,13 @@ class KeyValueStore {
   internal::EntryCache entry_cache_;
 
   Options options_;
+
+  // Threshold value for when to garbage collect all stale data. Above the
+  // threshold, GC all reclaimable bytes regardless of if valid data is in
+  // sector. Below the threshold, only GC sectors with reclaimable bytes and no
+  // valid bytes. The threshold is based on the portion of KVS capacity used by
+  // valid bytes.
+  static constexpr size_t kGcUsageThresholdPercentage = 70;
 
   enum class InitializationState {
     // KVS Init() has not been called and KVS is not usable.

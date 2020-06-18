@@ -13,3 +13,4 @@
 # the License.
 
 licenses(["notice"])  # Apache License 2.0
+exports_files(["tsconfig.json"], visibility = ["//:__subpackages__"])

@@ -1,0 +1,175 @@
+# Copyright 2020 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+# gn-format disable
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_docgen/docs.gni")
+import("$dir_pw_protobuf_compiler/proto.gni")
+import("$dir_pw_unit_test/test.gni")
+config("default_config") {
+  include_dirs = [ "public" ]
+  visibility = [ ":*" ]
+}
+
+# pw_rpc servers depend on the protobuf library used to encode and decode
+# requests and responses when invoking methods. This template is used to create
+# instances of the pw_rpc server library with different implementations.
+#
+# The implementation parameter must refer to a library that provides the
+# definition of the Method class in pw_rpc/internal/method.h. The Method class
+# provides the Invoke function, which handles the server use to call into the
+# RPC functions themselves.
+template("_pw_rpc_server_library") {
+  assert(defined(invoker.implementation),
+         "_pw_rpc_server_library requires an implementation to be set")
+  _target_name = target_name
+
+  pw_source_set(_target_name) {
+    forward_variables_from(invoker, "*")
+
+    public_deps = [
+      ":server_library_deps",
+      implementation,
+    ]
+    deps = [
+      dir_pw_assert,
+      dir_pw_log,
+    ]
+    public = [
+      "public/pw_rpc/server.h",
+      "public/pw_rpc/server_context.h",
+    ]
+    sources = [
+      "base_server_writer.cc",
+      "public/pw_rpc/internal/base_server_writer.h",
+      "public/pw_rpc/internal/service.h",
+      "server.cc",
+      "service.cc",
+    ]
+    allow_circular_includes_from = [ implementation ]
+    friend = [ "./*" ]
+  }
+
+  pw_source_set("test_utils_$_target_name") {
+    public = [ "pw_rpc_private/test_utils.h" ]
+    public_configs = [ ":private_includes" ]
+    public_deps = [
+      ":$_target_name",
+      ":common",
+      dir_pw_span,
+    ]
+    visibility = [ "./*" ]
+  }
+}
+
+# Put these dependencies into a group since they need to be shared by the server
+# library and its implementation library.
+group("server_library_deps") {
+  public_configs = [ ":default_config" ]
+  public_deps = [
+    ":common",
+    "$dir_pw_containers:intrusive_list",
+    dir_pw_span,
+    dir_pw_status,
+  ]
+  visibility = [ "./*" ]
+}
+
+# Classes with no dependencies on the protobuf library for method invocations.
+pw_source_set("common") {
+  public_configs = [ ":default_config" ]
+  public_deps = [
+    ":protos_pwpb",
+    dir_pw_assert,
+    dir_pw_span,
+    dir_pw_status,
+  ]
+  public = [ "public/pw_rpc/channel.h" ]
+  sources = [
+    "channel.cc",
+    "packet.cc",
+    "public/pw_rpc/internal/base_method.h",
+    "public/pw_rpc/internal/call.h",
+    "public/pw_rpc/internal/packet.h",
+  ]
+  friend = [ "./*" ]
+  visibility = [ "./*" ]
+}
+
+# RPC server that uses Nanopb to encode and decode protobufs. RPCs use Nanopb
+# structs as their requests and responses.
+_pw_rpc_server_library("nanopb_server") {
+  implementation = "nanopb"
+}
+
+config("private_includes") {
+  include_dirs = [ "." ]
+  visibility = [ ":*" ]
+}
+
+pw_proto_library("protos") {
+  sources = [ "pw_rpc_protos/packet.proto" ]
+}
+
+pw_doc_group("docs") {
+  sources = [ "docs.rst" ]
+}
+
+pw_test_group("tests") {
+  tests = [
+    ":base_server_writer_test",
+    "nanopb:method_test",
+    ":packet_test",
+    ":server_test",
+  ]
+}
+
+# RPC server for tests only. A mock method implementation is used.
+_pw_rpc_server_library("test_server") {
+  implementation = "test_impl"
+  visibility = [ ":*" ]
+}
+
+pw_proto_library("test_protos") {
+  sources = [ "pw_rpc_test_protos/test.proto" ]
+  visibility = [ "./*" ]
+}
+
+pw_test("base_server_writer_test") {
+  deps = [
+    ":test_server",
+    ":test_utils_test_server",
+  ]
+  sources = [ "base_server_writer_test.cc" ]
+}
+
+pw_test("packet_test") {
+  deps = [
+    ":common",
+    dir_pw_protobuf,
+  ]
+  sources = [ "packet_test.cc" ]
+}
+
+pw_test("server_test") {
+  deps = [
+    ":protos_pwpb",
+    ":test_server",
+    ":test_utils_test_server",
+    dir_pw_assert,
+  ]
+  sources = [ "server_test.cc" ]
+}

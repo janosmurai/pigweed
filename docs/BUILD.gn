@@ -95,7 +95,6 @@ pw_doc_gen("docs") {
     "$dir_pw_string:docs",
     "$dir_pw_sys_io:docs",
     "$dir_pw_sys_io_baremetal_stm32f429:docs",
-    "$dir_pw_sys_io_baremetal_stm32f407:docs",
     "$dir_pw_sys_io_stdio:docs",
     "$dir_pw_target_runner:docs",
     "$dir_pw_tokenizer:docs",

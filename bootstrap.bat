@@ -37,6 +37,8 @@ if "%PW_CHECKOUT_ROOT%"=="" (
   set PW_CHECKOUT_ROOT=
 )
 
+echo %PW_ROOT%
+
 :: Allow forcing a specific Python version through the environment variable
 :: PW_BOOTSTRAP_PYTHON. Otherwise, use the system Python if one exists.
 if not "%PW_BOOTSTRAP_PYTHON%" == "" (

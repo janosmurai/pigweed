@@ -12,8 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-import("$dir_pw_docgen/docs.gni")
-
 # This if statement allows docs to always build even if the target isn't
 # compatible with this backend.
 if (dir_pw_sys_io_backend == dir_pw_sys_io_baremetal_stm32f407) {
@@ -26,8 +24,4 @@ if (dir_pw_sys_io_backend == dir_pw_sys_io_baremetal_stm32f407) {
     ]
     sources = [ "sys_io_baremetal.cc" ]
   }
-}
-
-pw_doc_group("docs") {
-  sources = [ "docs.rst" ]
 }

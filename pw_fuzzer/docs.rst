@@ -1,7 +1,4 @@
-.. _chapter-pw-unit-test:
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _module-pw_fuzzer:
 
 ---------
 pw_fuzzer

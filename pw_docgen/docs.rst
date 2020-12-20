@@ -1,8 +1,4 @@
-.. _chapter-docgen:
-
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _module-pw_docgen:
 
 ---------
 pw_docgen

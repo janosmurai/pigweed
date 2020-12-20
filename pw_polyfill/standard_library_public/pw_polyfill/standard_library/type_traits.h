@@ -15,11 +15,14 @@
 
 #include <type_traits>
 
-namespace std {
+#include "pw_polyfill/standard_library/namespace.h"
+
+_PW_POLYFILL_BEGIN_NAMESPACE_STD
 
 // Defines std:foo_t aliases for typename foo::type. This is a small subset of
 // <type_traits> which may be expanded as needed.
 #ifndef __cpp_lib_transformation_trait_aliases
+#define __cpp_lib_transformation_trait_aliases 201304L
 
 template <decltype(sizeof(int)) Len, decltype(sizeof(int)) Align>
 using aligned_storage_t = typename aligned_storage<Len, Align>::type;
@@ -54,6 +57,7 @@ using remove_reference_t = typename remove_reference<T>::type;
 #endif  // __cpp_lib_transformation_trait_aliases
 
 #ifndef __cpp_lib_is_null_pointer
+#define __cpp_lib_is_null_pointer 201309L
 
 template <typename T>
 struct is_null_pointer : std::is_same<decltype(nullptr), std::remove_cv_t<T>> {
@@ -61,4 +65,4 @@ struct is_null_pointer : std::is_same<decltype(nullptr), std::remove_cv_t<T>> {
 
 #endif  // __cpp_lib_is_null_pointer
 
-}  // namespace std
+_PW_POLYFILL_END_NAMESPACE_STD

@@ -172,7 +172,7 @@ StringSegment::ArgSize StringSegment::VarargSize(std::array<char, 2> length,
 }
 
 DecodedArg StringSegment::DecodeString(
-    const span<const uint8_t>& arguments) const {
+    const std::span<const uint8_t>& arguments) const {
   if (arguments.empty()) {
     return DecodedArg(ArgStatus::kMissing, text_);
   }
@@ -201,18 +201,19 @@ DecodedArg StringSegment::DecodeString(
 }
 
 DecodedArg StringSegment::DecodeInteger(
-    const span<const uint8_t>& arguments) const {
+    const std::span<const uint8_t>& arguments) const {
   if (arguments.empty()) {
     return DecodedArg(ArgStatus::kMissing, text_);
   }
 
   int64_t value;
-  const size_t bytes = varint::Decode(pw::as_bytes(arguments), &value);
+  const size_t bytes = varint::Decode(std::as_bytes(arguments), &value);
 
   if (bytes == 0u) {
-    return DecodedArg(ArgStatus::kDecodeError,
-                      text_,
-                      std::min(varint::kMaxVarintSizeBytes, arguments.size()));
+    return DecodedArg(
+        ArgStatus::kDecodeError,
+        text_,
+        std::min(varint::kMaxVarint64SizeBytes, arguments.size()));
   }
 
   // Unsigned ints need to be masked to their bit width due to sign extension.
@@ -228,7 +229,7 @@ DecodedArg StringSegment::DecodeInteger(
 }
 
 DecodedArg StringSegment::DecodeFloatingPoint(
-    const span<const uint8_t>& arguments) const {
+    const std::span<const uint8_t>& arguments) const {
   static_assert(sizeof(float) == 4u);
   if (arguments.size() < sizeof(float)) {
     return DecodedArg(ArgStatus::kMissing, text_);
@@ -239,7 +240,8 @@ DecodedArg StringSegment::DecodeFloatingPoint(
   return DecodedArg::FromValue(text_.c_str(), value, sizeof(value));
 }
 
-DecodedArg StringSegment::Decode(const span<const uint8_t>& arguments) const {
+DecodedArg StringSegment::Decode(
+    const std::span<const uint8_t>& arguments) const {
   switch (type_) {
     case kLiteral:
       return DecodedArg(text_);
@@ -329,7 +331,8 @@ FormatString::FormatString(const char* format) {
   }
 }
 
-DecodedFormatString FormatString::Format(span<const uint8_t> arguments) const {
+DecodedFormatString FormatString::Format(
+    std::span<const uint8_t> arguments) const {
   std::vector<DecodedArg> results;
   bool skip = false;
 

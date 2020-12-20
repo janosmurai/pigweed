@@ -12,7 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 # Executable wrapper that includes some baremetal startup code.
@@ -22,6 +21,6 @@ template("lm3s6965evb_executable") {
     if (!defined(deps)) {
       deps = []
     }
-    deps += [ dir_pw_sys_io_baremetal_lm3s6965evb ]
+    deps += [ "$dir_pigweed/targets/lm3s6965evb-qemu:pre_init" ]
   }
 }

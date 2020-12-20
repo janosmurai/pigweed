@@ -12,7 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/exec.gni")
@@ -74,7 +73,7 @@ template("pw_linker_script") {
       # Treat the following file as a C file.
       "-x",
       "c",
-      get_path_info(invoker.linker_script, "abspath"),
+      rebase_path(invoker.linker_script),
     ]
 
     # Include any explicitly listed c flags.
@@ -84,13 +83,15 @@ template("pw_linker_script") {
 
     # Add defines.
     if (defined(invoker.defines)) {
-      args += process_file_template(invoker.defines, "-D{{source_name_part}}")
+      foreach(compiler_define, invoker.defines) {
+        args += [ "-D${compiler_define}" ]
+      }
     }
 
     # Set output file.
     args += [
       "-o",
-      _final_linker_script,
+      rebase_path(_final_linker_script),
     ]
     outputs = [ _final_linker_script ]
   }

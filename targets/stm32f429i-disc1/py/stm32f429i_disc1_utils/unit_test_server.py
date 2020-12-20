@@ -22,6 +22,7 @@ from typing import IO, List, Optional
 
 import pw_cli.process
 import pw_cli.log
+
 from stm32f429i_disc1_utils import stm32f429i_detector
 
 _LOG = logging.getLogger('unit_test_server')

@@ -1,4 +1,4 @@
-# Copyright 2019 The Pigweed Authors
+# Copyright 2020 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -12,12 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
+import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_unit_test/test.gni")
+
 config("default_config") {
   include_dirs = [
     "public",
@@ -38,7 +39,7 @@ pw_source_set("pw_unit_test") {
     "public/pw_unit_test/framework.h",
     "public_overrides/gtest/gtest.h",
   ]
-  sources = [ "framework.cc" ] + public
+  sources = [ "framework.cc" ]
 }
 
 # Library providing an event handler which outputs human-readable text.
@@ -48,7 +49,7 @@ pw_source_set("simple_printing_event_handler") {
     "$dir_pw_preprocessor",
   ]
   public = [ "public/pw_unit_test/simple_printing_event_handler.h" ]
-  sources = [ "simple_printing_event_handler.cc" ] + public
+  sources = [ "simple_printing_event_handler.cc" ]
 }
 
 # Library providing a standard desktop main function for the pw_unit_test
@@ -63,10 +64,6 @@ pw_source_set("simple_printing_main") {
   sources = [ "simple_printing_main.cc" ]
 }
 
-pw_doc_group("docs") {
-  sources = [ "docs.rst" ]
-}
-
 # Library providing an event handler which logs using pw_log.
 pw_source_set("logging_event_handler") {
   public_deps = [
@@ -75,7 +72,7 @@ pw_source_set("logging_event_handler") {
     "$dir_pw_preprocessor",
   ]
   public = [ "public/pw_unit_test/logging_event_handler.h" ]
-  sources = [ "logging_event_handler.cc" ] + public
+  sources = [ "logging_event_handler.cc" ]
 }
 
 pw_source_set("logging_main") {
@@ -85,6 +82,43 @@ pw_source_set("logging_main") {
     "$dir_pw_sys_io",
   ]
   sources = [ "logging_main.cc" ]
+}
+
+pw_source_set("rpc_service") {
+  public_configs = [ ":default_config" ]
+  public_deps = [
+    ":pw_unit_test",
+    ":unit_test_proto.pwpb",
+    ":unit_test_proto.raw_rpc",
+  ]
+  deps = [ dir_pw_log ]
+  public = [
+    "public/pw_unit_test/internal/rpc_event_handler.h",
+    "public/pw_unit_test/unit_test_service.h",
+  ]
+  sources = [
+    "rpc_event_handler.cc",
+    "unit_test_service.cc",
+  ]
+}
+
+pw_source_set("rpc_main") {
+  public_deps = [ ":pw_unit_test" ]
+  deps = [
+    ":rpc_service",
+    "$dir_pw_hdlc_lite:pw_rpc",
+    "$dir_pw_rpc:server",
+    dir_pw_log,
+  ]
+  sources = [ "rpc_main.cc" ]
+}
+
+pw_proto_library("unit_test_proto") {
+  sources = [ "pw_unit_test_proto/unit_test.proto" ]
+}
+
+pw_doc_group("docs") {
+  sources = [ "docs.rst" ]
 }
 
 pw_test("framework_test") {

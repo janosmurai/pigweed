@@ -13,14 +13,16 @@
 // the License.
 
 #define PW_LOG_MODULE_NAME "KVS"
+#define PW_LOG_LEVEL PW_KVS_LOG_LEVEL
 
 #include "pw_kvs/fake_flash_memory.h"
 
+#include "pw_kvs_private/config.h"
 #include "pw_log/log.h"
 
 namespace pw::kvs {
 
-Status FlashError::Check(span<FlashError> errors,
+Status FlashError::Check(std::span<FlashError> errors,
                          FlashMemory::Address address,
                          size_t size) {
   for (auto& error : errors) {
@@ -29,23 +31,23 @@ Status FlashError::Check(span<FlashError> errors,
     }
   }
 
-  return Status::OK;
+  return Status::Ok();
 }
 
 Status FlashError::Check(FlashMemory::Address start_address, size_t size) {
   // Check if the event overlaps with this address range.
   if (begin_ != kAnyAddress &&
       (start_address >= end_ || (start_address + size) <= begin_)) {
-    return Status::OK;
+    return Status::Ok();
   }
 
   if (delay_ > 0u) {
     delay_ -= 1;
-    return Status::OK;
+    return Status::Ok();
   }
 
   if (remaining_ == 0u) {
-    return Status::OK;
+    return Status::Ok();
   }
 
   if (remaining_ != kAlways) {
@@ -60,7 +62,7 @@ Status FakeFlashMemory::Erase(Address address, size_t num_sectors) {
     PW_LOG_ERROR(
         "Attempted to erase sector at non-sector aligned boundary; address %x",
         unsigned(address));
-    return Status::INVALID_ARGUMENT;
+    return Status::InvalidArgument();
   }
   const size_t sector_id = address / sector_size_bytes();
   if (address / sector_size_bytes() + num_sectors > sector_count()) {
@@ -69,17 +71,18 @@ Status FakeFlashMemory::Erase(Address address, size_t num_sectors) {
         "address: %x, sector implied: %u",
         unsigned(address),
         unsigned(sector_id));
-    return Status::OUT_OF_RANGE;
+    return Status::OutOfRange();
   }
 
   std::memset(
       &buffer_[address], int(kErasedValue), sector_size_bytes() * num_sectors);
-  return Status::OK;
+  return Status::Ok();
 }
 
-StatusWithSize FakeFlashMemory::Read(Address address, span<std::byte> output) {
+StatusWithSize FakeFlashMemory::Read(Address address,
+                                     std::span<std::byte> output) {
   if (address + output.size() >= sector_count() * size_bytes()) {
-    return StatusWithSize::OUT_OF_RANGE;
+    return StatusWithSize::OutOfRange();
   }
 
   // Check for injected read errors
@@ -89,21 +92,21 @@ StatusWithSize FakeFlashMemory::Read(Address address, span<std::byte> output) {
 }
 
 StatusWithSize FakeFlashMemory::Write(Address address,
-                                      span<const std::byte> data) {
+                                      std::span<const std::byte> data) {
   if (address % alignment_bytes() != 0 ||
       data.size() % alignment_bytes() != 0) {
     PW_LOG_ERROR("Unaligned write; address %x, size %u B, alignment %u",
                  unsigned(address),
                  unsigned(data.size()),
                  unsigned(alignment_bytes()));
-    return StatusWithSize::INVALID_ARGUMENT;
+    return StatusWithSize::InvalidArgument();
   }
 
   if (data.size() > sector_size_bytes() - (address % sector_size_bytes())) {
     PW_LOG_ERROR("Write crosses sector boundary; address %x, size %u B",
                  unsigned(address),
                  unsigned(data.size()));
-    return StatusWithSize::INVALID_ARGUMENT;
+    return StatusWithSize::InvalidArgument();
   }
 
   if (address + data.size() > sector_count() * sector_size_bytes()) {
@@ -112,7 +115,7 @@ StatusWithSize FakeFlashMemory::Write(Address address,
         unsigned(address),
         unsigned(data.size()),
         unsigned(sector_count() * sector_size_bytes()));
-    return StatusWithSize::OUT_OF_RANGE;
+    return StatusWithSize::OutOfRange();
   }
 
   // Check in erased state
@@ -120,7 +123,7 @@ StatusWithSize FakeFlashMemory::Write(Address address,
     if (buffer_[address + i] != kErasedValue) {
       PW_LOG_ERROR("Writing to previously written address: %x",
                    unsigned(address));
-      return StatusWithSize::UNKNOWN;
+      return StatusWithSize::Unknown();
     }
   }
 
@@ -128,6 +131,18 @@ StatusWithSize FakeFlashMemory::Write(Address address,
   Status status = FlashError::Check(write_errors_, address, data.size());
   std::memcpy(&buffer_[address], data.data(), data.size());
   return StatusWithSize(status, data.size());
+}
+
+std::byte* FakeFlashMemory::FlashAddressToMcuAddress(Address address) const {
+  if (address > sector_count() * sector_size_bytes()) {
+    PW_LOG_ERROR(
+        "FlashAddressToMcuAddress beyond end of memory; address %x, max "
+        "address %x",
+        unsigned(address),
+        unsigned(sector_count() * sector_size_bytes()));
+    return nullptr;
+  }
+  return buffer_.data() + address;
 }
 
 }  // namespace pw::kvs

@@ -48,6 +48,7 @@ namespace pw {
 //   for (auto& test_item : test_items) {
 //     // Do a thing.
 //   }
+//
 template <typename T>
 class IntrusiveList {
  public:
@@ -144,6 +145,9 @@ class IntrusiveList {
     return const_iterator(static_cast<const Item*>(list_.end()));
   }
   const_iterator cend() const noexcept { return end(); }
+
+  // Operation is O(size).
+  size_t size() const { return list_.size(); }
 
  private:
   // Check that T is an Item in a function, since the class T will not be fully

@@ -12,12 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/facade.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
+
 declare_args() {
   # Backend for the pw_trace module.
   pw_trace_BACKEND = ""
@@ -75,4 +75,27 @@ pw_test("trace_backend_compile_test") {
 
 pw_doc_group("docs") {
   sources = [ "docs.rst" ]
+}
+
+config("trace_sample_app_config") {
+  include_dirs = [ "example/public" ]
+}
+
+# The trace sample app produces a variety of different trace events to help
+# understand tracing.
+pw_source_set("trace_sample_app") {
+  deps = [ ":pw_trace" ]
+  public_deps = [ "$dir_pw_ring_buffer" ]
+  sources = [ "example/sample_app.cc" ]
+  public_configs = [ ":trace_sample_app_config" ]
+  public = [ "example/public/pw_trace/example/sample_app.h" ]
+}
+
+# Builds the trace sample app with whichever backend is connected
+pw_executable("trace_example_basic") {
+  deps = [
+    ":trace_sample_app",
+    "$dir_pw_log",
+  ]
+  sources = [ "example/basic.cc" ]
 }

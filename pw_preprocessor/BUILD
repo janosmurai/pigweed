@@ -24,14 +24,15 @@ licenses(["notice"])  # Apache License 2.0
 
 pw_cc_library(
     name = "pw_preprocessor",
+    srcs = ["public/pw_preprocessor/internal/arg_count_impl.h"],
     hdrs = glob(["public/pw_preprocessor/*.h"]),
     includes = ["public"],
 )
 
 TESTS = [
+    "arguments_test",
     "boolean_test",
     "concat_test",
-    "macro_arg_count_test",
     "util_test",
 ]
 

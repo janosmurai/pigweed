@@ -1,19 +1,14 @@
-.. _chapter-host:
-
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _target-host:
 
 ----
 host
 ----
-The Pigweed host target assembles Pigweed's reStructuredText and markdown
-documentation into a collection of HTML pages.
+The Pigweed host target is used for unit testing and some host side tooling.
 
 Building
 ========
-To build for this target, change the ``pw_target_config`` GN build arg to point
-to this target's configuration file.
+To build for this target, invoke ninja with the top-level "host" group as the
+target to build.
 
 .. code:: sh
 
@@ -33,7 +28,7 @@ Example:
 
 ... code:: sh
 
-  $ ./out/host_[compiler]/obj/pw_status/status_test
+  $ ./out/host_[compiler]_debug/obj/pw_status/status_test
 
 Configuration
 =============

@@ -24,12 +24,13 @@ from pw_presubmit import call
 _LOG = logging.getLogger(__name__)
 
 
-def init_cipd(pigweed_root: Path, output_directory: Path) -> None:
+def init_cipd(
+    pigweed_root: Path,
+    output_directory: Path,
+    package_files: Iterable[Path] = ()) -> None:
     """Runs CIPD."""
 
     # TODO(mohrr): invoke by importing rather than by subprocess.
-
-    # TODO(pwbug/138): find way to support dependent project package files.
 
     cmd = [
         sys.executable,
@@ -38,10 +39,12 @@ def init_cipd(pigweed_root: Path, output_directory: Path) -> None:
         '--install-dir', output_directory,
     ]  # yapf: disable
 
-    package_files = pigweed_root.joinpath('pw_env_setup', 'py', 'pw_env_setup',
-                                          'cipd_setup').glob('*.json')
+    final_package_files = list(
+        pigweed_root.joinpath('pw_env_setup', 'py', 'pw_env_setup',
+                              'cipd_setup').glob('*.json'))
+    final_package_files.extend(package_files)
 
-    for package_file in package_files:
+    for package_file in final_package_files:
         cmd.extend(('--package-file', package_file))
 
     call(*cmd)
@@ -60,26 +63,30 @@ def init_cipd(pigweed_root: Path, output_directory: Path) -> None:
 def init_virtualenv(
         pigweed_root: Path,
         output_directory: Path,
-        setup_py_roots: Iterable[Union[Path, str]] = (),
+        requirements: Iterable[Union[Path, str]] = (),
+        gn_targets: Iterable[str] = (),
 ) -> None:
     """Sets up a virtualenv, assumes recent Python 3 is already installed."""
     virtualenv_source = pigweed_root.joinpath('pw_env_setup', 'py',
                                               'pw_env_setup',
                                               'virtualenv_setup')
 
-    # TODO(pwbug/138): find way to support dependent project requirements.
-
-    # For speed, don't build the venv if it exists. Use --clean to rebuild.
-    if not output_directory.joinpath('pyvenv.cfg').is_file():
-        call(
-            'python3',
-            virtualenv_source,
-            f'--venv_path={output_directory}',
-            f'--requirements={virtualenv_source / "requirements.txt"}',
-            *(f'--setup-py-root={p}' for p in [pigweed_root, *setup_py_roots]),
-        )
-
+    # Need to set VIRTUAL_ENV before invoking GN because the GN targets install
+    # directly to the current virtual env.
+    os.environ['VIRTUAL_ENV'] = str(output_directory)
     os.environ['PATH'] = os.pathsep.join((
         str(output_directory.joinpath('bin')),
         os.environ['PATH'],
     ))
+
+    if not gn_targets:
+        gn_targets = (f'{os.environ["PW_ROOT"]}#:python.install', )
+
+    call(
+        'python3',
+        virtualenv_source,
+        f'--venv_path={output_directory}',
+        f'--requirements={virtualenv_source / "requirements.txt"}',
+        *(f'--requirements={x}' for x in requirements),
+        *(f'--gn-target={t}' for t in gn_targets),
+    )

@@ -80,8 +80,8 @@ def _add_programs_arguments(exclusive: argparse.ArgumentParser,
             if values not in all_steps:
                 raise parser.error(
                     f'argument --step: {values} is not the name of a '
-                    'presubmit check\n\n'
-                    f'Valid values for --step:\n{{{",".join(all_steps)}}}')
+                    'presubmit check\n\nValid values for --step:\n'
+                    f'{{{",".join(sorted(all_steps))}}}')
 
             namespace.program.append(all_steps[values])
 
@@ -108,6 +108,11 @@ def add_arguments(parser: argparse.ArgumentParser,
         type=Path,
         help='Output directory (default: <repo root>/.presubmit)',
     )
+    parser.add_argument(
+        '--package-root',
+        type=Path,
+        help='Package root directory (default: <output directory>/packages)',
+    )
 
     exclusive = parser.add_mutually_exclusive_group()
     exclusive.add_argument(
@@ -126,7 +131,8 @@ def add_arguments(parser: argparse.ArgumentParser,
 
 def run(
         program: Sequence[Callable],
-        output_directory: Path,
+        output_directory: Optional[Path],
+        package_root: Path,
         clear: bool,
         root: Path = None,
         repositories: Collection[Path] = (),
@@ -141,6 +147,7 @@ def run(
           defaults to the root of the current directory's repository
       program: from the --program option
       output_directory: from --output-directory option
+      package_root: from --package-root option
       clear: from the --clear option
       **other_args: remaining arguments defined by by add_arguments
 
@@ -153,8 +160,11 @@ def run(
     if not repositories:
         repositories = [root]
 
-    if not output_directory:
+    if output_directory is None:
         output_directory = root / '.presubmit'
+
+    if not package_root:
+        package_root = output_directory / 'packages'
 
     _LOG.debug('Using environment at %s', output_directory)
 
@@ -171,6 +181,7 @@ def run(
                      root,
                      repositories,
                      output_directory=output_directory,
+                     package_root=package_root,
                      **other_args):
         return 0
 

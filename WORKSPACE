@@ -21,12 +21,11 @@ workspace(
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "f9e7b9f42ae202cc2d2ce6d698ccb49a9f7f7ea572a78fd451696d03ef2ee116",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/1.6.0/rules_nodejs-1.6.0.tar.gz"],
+    sha256 = "4952ef879704ab4ad6729a29007e7094aef213ea79e9f2e94cbe1c9a753e63ef",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/2.2.0/rules_nodejs-2.2.0.tar.gz"],
 )
-
+# Get the latest LTS version of Node
 load("@build_bazel_rules_nodejs//:index.bzl", "node_repositories")
-
 node_repositories(package_json = ["//:package.json"])
 
 # Install packages with yarn
@@ -37,11 +36,17 @@ yarn_install(
     yarn_lock = "//:yarn.lock",
 )
 
-# Install Bazel rules from npm packages
-load("@npm//:install_bazel_dependencies.bzl", "install_bazel_dependencies")
-install_bazel_dependencies()
+# Set up Karma
+load("@npm//@bazel/karma:package.bzl", "npm_bazel_karma_dependencies")
+npm_bazel_karma_dependencies()
 
+load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
+web_test_repositories()
 
-# Setup TypeScript
-load("@npm_bazel_typescript//:index.bzl", "ts_setup_workspace")
-ts_setup_workspace()
+load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.2.bzl", "browser_repositories")
+
+browser_repositories(
+    chromium = True,
+    firefox = True,
+)
+

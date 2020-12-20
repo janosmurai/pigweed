@@ -30,20 +30,20 @@ Status Encoder::WriteVarint(uint64_t value) {
     return encode_status_;
   }
 
-  span varint_buf = buffer_.last(RemainingSize());
+  std::span varint_buf = buffer_.last(RemainingSize());
   if (varint_buf.empty()) {
-    encode_status_ = Status::RESOURCE_EXHAUSTED;
+    encode_status_ = Status::ResourceExhausted();
     return encode_status_;
   }
 
   size_t written = pw::varint::EncodeLittleEndianBase128(value, varint_buf);
   if (written == 0) {
-    encode_status_ = Status::RESOURCE_EXHAUSTED;
+    encode_status_ = Status::ResourceExhausted();
     return encode_status_;
   }
 
   cursor_ += written;
-  return Status::OK;
+  return Status::Ok();
 }
 
 Status Encoder::WriteRawBytes(const std::byte* ptr, size_t size) {
@@ -52,7 +52,7 @@ Status Encoder::WriteRawBytes(const std::byte* ptr, size_t size) {
   }
 
   if (size > RemainingSize()) {
-    encode_status_ = Status::RESOURCE_EXHAUSTED;
+    encode_status_ = Status::ResourceExhausted();
     return encode_status_;
   }
 
@@ -61,7 +61,7 @@ Status Encoder::WriteRawBytes(const std::byte* ptr, size_t size) {
   std::memmove(cursor_, ptr, size);
 
   cursor_ += size;
-  return Status::OK;
+  return Status::Ok();
 }
 
 Status Encoder::Push(uint32_t field_number) {
@@ -70,7 +70,7 @@ Status Encoder::Push(uint32_t field_number) {
   }
 
   if (blob_count_ == blob_locations_.size() || depth_ == blob_stack_.size()) {
-    encode_status_ = Status::RESOURCE_EXHAUSTED;
+    encode_status_ = Status::ResourceExhausted();
     return encode_status_;
   }
 
@@ -85,7 +85,7 @@ Status Encoder::Push(uint32_t field_number) {
   if (sizeof(SizeType) > RemainingSize()) {
     // Rollback if there isn't enough space.
     cursor_ = original_cursor;
-    encode_status_ = Status::RESOURCE_EXHAUSTED;
+    encode_status_ = Status::ResourceExhausted();
     return encode_status_;
   }
 
@@ -105,7 +105,7 @@ Status Encoder::Push(uint32_t field_number) {
   blob_stack_[depth_++] = size_cursor;
 
   cursor_ += sizeof(*size_cursor);
-  return Status::OK;
+  return Status::Ok();
 }
 
 Status Encoder::Pop() {
@@ -114,7 +114,7 @@ Status Encoder::Pop() {
   }
 
   if (depth_ == 0) {
-    encode_status_ = Status::FAILED_PRECONDITION;
+    encode_status_ = Status::FailedPrecondition();
     return encode_status_;
   }
 
@@ -123,19 +123,26 @@ Status Encoder::Pop() {
   SizeType child_size = *blob_stack_[--depth_];
   IncreaseParentSize(child_size + VarintSizeBytes(child_size));
 
-  return Status::OK;
+  // Encode the child
+  if (Status status = EncodeFrom(blob_count_ - 1).status(); !status.ok()) {
+    encode_status_ = status;
+    return encode_status_;
+  }
+  blob_count_--;
+
+  return Status::Ok();
 }
 
-Status Encoder::Encode(span<const std::byte>* out) {
+Result<ConstByteSpan> Encoder::Encode() { return EncodeFrom(0); }
+
+Result<ConstByteSpan> Encoder::EncodeFrom(size_t blob) {
   if (!encode_status_.ok()) {
-    *out = span<const std::byte>();
     return encode_status_;
   }
 
-  if (blob_count_ == 0) {
+  if (blob >= blob_count_) {
     // If there are no nested blobs, the buffer already contains a valid proto.
-    *out = buffer_.first(EncodedSize());
-    return Status::OK;
+    return Result<ConstByteSpan>(buffer_.first(EncodedSize()));
   }
 
   union {
@@ -145,14 +152,13 @@ Status Encoder::Encode(span<const std::byte>* out) {
 
   // Starting from the first blob, encode each size field as a varint and
   // shift all subsequent data downwards.
-  unsigned int blob = 0;
   size_cursor = blob_locations_[blob];
   std::byte* write_cursor = read_cursor;
 
   while (read_cursor < cursor_) {
     SizeType nested_size = *size_cursor;
 
-    span<std::byte> varint_buf(write_cursor, sizeof(*size_cursor));
+    std::span<std::byte> varint_buf(write_cursor, sizeof(*size_cursor));
     size_t varint_size =
         pw::varint::EncodeLittleEndianBase128(nested_size, varint_buf);
 
@@ -179,8 +185,7 @@ Status Encoder::Encode(span<const std::byte>* out) {
 
   // Point the cursor to the end of the encoded proto.
   cursor_ = write_cursor;
-  *out = buffer_.first(EncodedSize());
-  return Status::OK;
+  return Result<ConstByteSpan>(buffer_.first(EncodedSize()));
 }
 
 }  // namespace pw::protobuf

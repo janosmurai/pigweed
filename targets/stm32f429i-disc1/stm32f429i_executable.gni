@@ -12,8 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
+import("$dir_pw_malloc/backend.gni")
 
 # Executable wrapper that includes some baremetal startup code.
 template("stm32f429i_executable") {
@@ -22,6 +22,12 @@ template("stm32f429i_executable") {
     if (!defined(deps)) {
       deps = []
     }
-    deps += [ dir_pw_sys_io_baremetal_stm32f429 ]
+    deps += [ "$dir_pigweed/targets/stm32f429i-disc1:pre_init" ]
+    if (pw_malloc_BACKEND != "") {
+      if (!defined(configs)) {
+        configs = []
+      }
+      configs += [ "$dir_pw_malloc:pw_malloc_wrapper_config" ]
+    }
   }
 }

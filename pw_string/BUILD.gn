@@ -12,13 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_bloat/bloat.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_unit_test/test.gni")
+
 config("default_config") {
   include_dirs = [ "public" ]
 }
@@ -37,7 +37,6 @@ pw_source_set("pw_string") {
     "string_builder.cc",
     "type_to_string.cc",
   ]
-  sources += public
   public_deps = [
     "$dir_pw_preprocessor",
     "$dir_pw_span",

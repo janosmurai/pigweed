@@ -12,13 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_fuzzer/fuzzer.gni")
 import("$dir_pw_fuzzer/oss_fuzz.gni")
+
 config("default_config") {
   include_dirs = [ "public" ]
 }
@@ -73,11 +73,10 @@ pw_source_set("pw_fuzzer") {
     "public/pw_fuzzer/asan_interface.h",
     "public/pw_fuzzer/fuzzed_data_provider.h",
   ]
-  sources = public
   public_deps = [ "$dir_pw_log" ]
 }
 
-source_set("run_as_unit_test") {
+pw_source_set("run_as_unit_test") {
   configs = [ ":default_config" ]
   sources = [ "pw_fuzzer_disabled.cc" ]
   deps = [

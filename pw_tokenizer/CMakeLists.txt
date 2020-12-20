@@ -12,25 +12,43 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+
 pw_add_module_library(pw_tokenizer
   SOURCES
     encode_args.cc
+    hash.cc
     tokenize.cc
   PUBLIC_DEPS
+    pw_polyfill.overrides
     pw_preprocessor
     pw_span
   PRIVATE_DEPS
     pw_varint
 )
 
+if("${CMAKE_SYSTEM_NAME}" STREQUAL "")
+  target_link_options(pw_tokenizer
+    PUBLIC
+      "-T${CMAKE_CURRENT_SOURCE_DIR}/pw_tokenizer_linker_sections.ld"
+  )
+elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+  target_link_options(pw_tokenizer
+    PUBLIC
+      "-T${CMAKE_CURRENT_SOURCE_DIR}/add_tokenizer_sections_to_default_script.ld"
+      "-L${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+endif()
+
 pw_add_module_library(pw_tokenizer.base64
   SOURCES
     base64.cc
   PUBLIC_DEPS
+    pw_base64
+    pw_containers
+    pw_polyfill.overrides
     pw_preprocessor
     pw_span
-  PRIVATE_DEPS
-    pw_base64
 )
 
 pw_add_module_library(pw_tokenizer.decoder
@@ -50,6 +68,8 @@ pw_add_facade(pw_tokenizer.global_handler
     tokenize_to_global_handler.cc
   PUBLIC_DEPS
     pw_tokenizer
+  DEFAULT_BACKEND
+    pw_build.empty  # Default to an empty backend so the tests can run.
 )
 
 pw_add_facade(pw_tokenizer.global_handler_with_payload
@@ -57,20 +77,9 @@ pw_add_facade(pw_tokenizer.global_handler_with_payload
     tokenize_to_global_handler_with_payload.cc
   PUBLIC_DEPS
     pw_tokenizer
+  DEFAULT_BACKEND
+    pw_build.empty  # Default to an empty backend so the tests can run.
 )
-
-# TODO(hepler): Use an empty backend that makes tests possible, for now.
-add_library(pw_tokenizer.global_handler.backend INTERFACE)
-target_link_libraries(pw_tokenizer.global_handler.backend
-  INTERFACE
-    pw_tokenizer.test_backend)
-
-add_library(pw_tokenizer.global_handler_with_payload.backend INTERFACE)
-target_link_libraries(pw_tokenizer.global_handler_with_payload.backend
-  INTERFACE
-    pw_tokenizer.test_backend)
-
-add_library(pw_tokenizer.test_backend INTERFACE)
 
 # Executable for generating test data for the C++ and Python detokenizers. This
 # target should only be built for the host.

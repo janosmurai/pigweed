@@ -12,13 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
-import("$dir_pw_protobuf_compiler/nanopb.gni")
+import("$dir_pw_chrono/backend.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
+import("$dir_pw_rpc/system_server/backend.gni")
+import("$dir_pw_sync/backend.gni")
+import("$dir_pw_sys_io/backend.gni")
+import("$dir_pw_third_party/nanopb/nanopb.gni")
 import("$dir_pw_toolchain/host_clang/toolchains.gni")
 import("$dir_pw_toolchain/host_gcc/toolchains.gni")
+
 _host_common = {
   # Use logging-based test output on host.
   pw_unit_test_MAIN = "$dir_pw_unit_test:logging_main"
@@ -29,15 +33,27 @@ _host_common = {
   # Configure backend for logging facade.
   pw_log_BACKEND = "$dir_pw_log_basic"
 
+  # Configure backends for pw_sync's facades.
+  pw_sync_SPIN_LOCK_BACKEND = "$dir_pw_sync_stl:spin_lock_backend"
+
   # Configure backend for pw_sys_io facade.
   pw_sys_io_BACKEND = "$dir_pw_sys_io_stdio"
 
-  # Allow nanopb to be toggled via a build arg on host for easy testing.
-  _has_nanopb = pw_protobuf_GENERATORS + [ "nanopb" ] - [ "nanopb" ] !=
-                pw_protobuf_GENERATORS
-  if (dir_pw_third_party_nanopb != "" && !_has_nanopb) {
-    pw_protobuf_GENERATORS += [ "nanopb" ]
-  }
+  # Configure backend for pw_rpc_system_server.
+  pw_rpc_system_server_BACKEND = "$dir_pw_rpc/system_server:socket"
+
+  # Configure backend for trace facade.
+  pw_trace_BACKEND = "$dir_pw_trace_tokenized"
+
+  # Tokenizer trace time.
+  pw_trace_tokenizer_time = "$dir_pw_trace_tokenized:host_trace_time"
+
+  # Configure backend for pw_chrono's system_clock facade.
+  pw_chrono_SYSTEM_CLOCK_BACKEND = "$dir_pw_chrono_stl:system_clock"
+
+  # Specify builtin GN variables.
+  current_os = host_os
+  current_cpu = host_cpu
 }
 
 # Linux-specific target configuration.
@@ -60,15 +76,28 @@ _win_config = {
   pw_unit_test_AUTOMATIC_RUNNER = get_path_info("run_test.bat", "abspath")
 }
 
+# TODO(amontanez): figure out why std::mutex doesn't work on Windows.
+# These current target configurations do not work on windows.
+_win_incompatible_config = {
+  pw_sync_BINARY_SEMAPHORE_BACKEND = "$dir_pw_sync_stl:binary_semaphore_backend"
+  pw_sync_COUNTING_SEMAPHORE_BACKEND =
+      "$dir_pw_sync_stl:counting_semaphore_backend"
+  pw_sync_MUTEX_BACKEND = "$dir_pw_sync_stl:mutex_backend"
+}
+
 _os_specific_config = {
   if (host_os == "linux") {
     forward_variables_from(_linux_config, "*")
+    forward_variables_from(_win_incompatible_config, "*")
   } else if (host_os == "mac") {
     forward_variables_from(_mac_config, "*")
+    forward_variables_from(_win_incompatible_config, "*")
   } else if (host_os == "win") {
     forward_variables_from(_win_config, "*")
   }
 }
+
+_target_default_configs = [ "$dir_pw_build:extra_strict_warnings" ]
 
 pw_target_toolchain_host = {
   _excluded_members = [
@@ -84,6 +113,7 @@ pw_target_toolchain_host = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -95,6 +125,7 @@ pw_target_toolchain_host = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -106,6 +137,7 @@ pw_target_toolchain_host = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -117,6 +149,7 @@ pw_target_toolchain_host = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -128,6 +161,7 @@ pw_target_toolchain_host = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -139,6 +173,7 @@ pw_target_toolchain_host = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
+      default_configs += _target_default_configs
     }
   }
 }

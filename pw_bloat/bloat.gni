@@ -12,10 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
-import("$dir_pw_build/python_script.gni")
+import("$dir_pw_build/python_action.gni")
+
 declare_args() {
   # Path to the Bloaty configuration file that defines the memory layout and
   # capacities for the target binaries.
@@ -99,9 +99,7 @@ template("pw_size_report") {
              "Size report binaries must define 'label' and 'target' variables")
       _all_target_dependencies += [ binary.target ]
 
-      _target_dir = get_label_info(binary.target, "target_out_dir")
-      _target_name = get_label_info(binary.target, "name")
-      _binary_path = get_path_info(_target_dir, "abspath") + ":$_target_name"
+      _binary_path = "<TARGET_FILE(${binary.target})>"
 
       # If the binary defines its own base, use that instead of the global base.
       if (defined(binary.base)) {
@@ -115,14 +113,12 @@ template("pw_size_report") {
 
       # Allow each binary to override the global bloaty config.
       if (defined(binary.bloaty_config)) {
-        _bloaty_configs += [ get_path_info(binary.bloaty_config, "abspath") ]
+        _bloaty_configs += [ rebase_path(binary.bloaty_config) ]
       } else {
-        _bloaty_configs += [ get_path_info(pw_bloat_BLOATY_CONFIG, "abspath") ]
+        _bloaty_configs += [ rebase_path(pw_bloat_BLOATY_CONFIG) ]
       }
 
-      _base_dir = get_label_info(_binary_base, "target_out_dir")
-      _base_name = get_label_info(_binary_base, "name")
-      _binary_path += ";" + get_path_info(_base_dir, "abspath") + ":$_base_name"
+      _binary_path += ";" + "<TARGET_FILE($_binary_base)>"
 
       _binary_paths += [ _binary_path ]
       _binary_labels += [ binary.label ]
@@ -132,7 +128,7 @@ template("pw_size_report") {
       "--bloaty-config",
       string_join(";", _bloaty_configs),
       "--out-dir",
-      target_gen_dir,
+      rebase_path(target_gen_dir),
       "--target",
       target_name,
       "--title",
@@ -154,20 +150,18 @@ template("pw_size_report") {
 
     _doc_rst_output = "$target_gen_dir/${target_name}"
 
-    # TODO(frolv): Size reports are temporarily disabled pending the toolchain
-    # refactor.
-    if (true || host_os == "win") {
+    if (host_os == "win") {
       # Bloaty is not yet packaged for Windows systems; display a message
       # indicating this.
       not_needed("*")
       not_needed(invoker, "*")
 
-      pw_python_script(target_name) {
+      pw_python_action(target_name) {
         metadata = {
           pw_doc_sources = rebase_path([ _doc_rst_output ], root_build_dir)
         }
-        script = "$dir_pw_bloat/py/no_bloaty.py"
-        args = [ _doc_rst_output ]
+        script = "$dir_pw_bloat/py/pw_bloat/no_bloaty.py"
+        args = [ rebase_path(_doc_rst_output) ]
         outputs = [ _doc_rst_output ]
       }
 
@@ -177,20 +171,17 @@ template("pw_size_report") {
     } else {
       # Create an action which runs the size report script on the provided
       # targets.
-      pw_python_script(target_name) {
+      pw_python_action(target_name) {
         metadata = {
           pw_doc_sources = rebase_path([ _doc_rst_output ], root_build_dir)
         }
-        script = "$dir_pw_bloat/py/bloat.py"
-        inputs = [
-                   "$dir_pw_bloat/py/binary_diff.py",
-                   "$dir_pw_bloat/py/bloat_output.py",
-                 ] + _bloaty_configs
+        script = "$dir_pw_bloat/py/pw_bloat/bloat.py"
+        inputs = _bloaty_configs
         outputs = [
           "$target_gen_dir/${target_name}.txt",
           _doc_rst_output,
         ]
-        deps = _all_target_dependencies
+        deps = _all_target_dependencies + [ "$dir_pw_bloat/py" ]
         args = _bloat_script_args + _binary_paths
 
         # Print size reports to stdout when they are generated.
@@ -325,12 +316,12 @@ template("pw_toolchain_size_report") {
     not_needed(invoker, "*")
 
     _doc_rst_output = "$target_gen_dir/$target_name"
-    pw_python_script(target_name) {
+    pw_python_action(target_name) {
       metadata = {
         pw_doc_sources = rebase_path([ _doc_rst_output ], root_build_dir)
       }
-      script = "$dir_pw_bloat/py/no_toolchains.py"
-      args = [ _doc_rst_output ]
+      script = "$dir_pw_bloat/py/pw_bloat/no_toolchains.py"
+      args = [ rebase_path(_doc_rst_output) ]
       outputs = [ _doc_rst_output ]
     }
   }

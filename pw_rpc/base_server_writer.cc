@@ -14,67 +14,105 @@
 
 #include "pw_rpc/internal/base_server_writer.h"
 
-#include "pw_assert/assert.h"
 #include "pw_rpc/internal/method.h"
 #include "pw_rpc/internal/packet.h"
-#include "pw_rpc/server.h"
+#include "pw_rpc/internal/server.h"
 
 namespace pw::rpc::internal {
 
+BaseServerWriter::BaseServerWriter(ServerCall& call)
+    : call_(call), state_(kOpen) {
+  call_.server().RegisterWriter(*this);
+}
+
 BaseServerWriter& BaseServerWriter::operator=(BaseServerWriter&& other) {
-  context_ = std::move(other.context_);
+  Finish();
+
+  state_ = other.state_;
+
+  if (other.open()) {
+    other.call_.server().RemoveWriter(other);
+    other.state_ = kClosed;
+
+    other.call_.server().RegisterWriter(*this);
+  }
+
+  call_ = std::move(other.call_);
   response_ = std::move(other.response_);
-  state_ = std::move(other.state_);
-  other.state_ = kClosed;
+
   return *this;
 }
 
-void BaseServerWriter::close() {
-  if (open()) {
-    // TODO(hepler): Send a control packet indicating that the stream has
-    // terminated, and remove this ServerWriter from the Server's list.
+uint32_t BaseServerWriter::method_id() const { return call_.method().id(); }
 
-    state_ = kClosed;
+void BaseServerWriter::Finish(Status status) {
+  if (!open()) {
+    return;
   }
+
+  // If the ServerWriter implementer or user forgets to release an acquired
+  // buffer before finishing, release it here.
+  if (!response_.empty()) {
+    ReleasePayloadBuffer();
+  }
+
+  Close();
+
+  // Send a control packet indicating that the stream (and RPC) has terminated.
+  call_.channel().Send(Packet(PacketType::SERVER_STREAM_END,
+                              call_.channel().id(),
+                              call_.service().id(),
+                              method().id(),
+                              {},
+                              status));
 }
 
-span<std::byte> BaseServerWriter::AcquireBuffer() {
+std::span<std::byte> BaseServerWriter::AcquirePayloadBuffer() {
   if (!open()) {
     return {};
   }
 
-  PW_DCHECK(response_.empty());
-  response_ = context_.channel().AcquireBuffer();
+  // Only allow having one active buffer at a time.
+  if (response_.empty()) {
+    response_ = call_.channel().AcquireBuffer();
+  }
 
-  // Reserve space for the RPC packet header.
-  return packet().PayloadUsableSpace(response_);
+  return response_.payload(ResponsePacket());
 }
 
-Status BaseServerWriter::SendAndReleaseBuffer(span<const std::byte> payload) {
+Status BaseServerWriter::ReleasePayloadBuffer(
+    std::span<const std::byte> payload) {
   if (!open()) {
-    return Status::FAILED_PRECONDITION;
+    return Status::FailedPrecondition();
   }
-
-  Packet response_packet = packet();
-  response_packet.set_payload(payload);
-  StatusWithSize encoded = response_packet.Encode(response_);
-  response_ = {};
-
-  if (!encoded.ok()) {
-    context_.channel().SendAndReleaseBuffer(0);
-    return Status::INTERNAL;
-  }
-
-  // TODO(hepler): Should Channel::SendAndReleaseBuffer return Status?
-  context_.channel().SendAndReleaseBuffer(encoded.size());
-  return Status::OK;
+  return call_.channel().Send(response_, ResponsePacket(payload));
 }
 
-Packet BaseServerWriter::packet() const {
-  return Packet(PacketType::RPC,
-                context_.channel_id(),
-                context_.service().id(),
-                method().id());
+Status BaseServerWriter::ReleasePayloadBuffer() {
+  if (!open()) {
+    return Status::FailedPrecondition();
+  }
+
+  call_.channel().Release(response_);
+  return Status::Ok();
+}
+
+void BaseServerWriter::Close() {
+  if (!open()) {
+    return;
+  }
+
+  call_.server().RemoveWriter(*this);
+  state_ = kClosed;
+}
+
+Packet BaseServerWriter::ResponsePacket(
+    std::span<const std::byte> payload) const {
+  return Packet(PacketType::RESPONSE,
+                call_.channel().id(),
+                call_.service().id(),
+                method().id(),
+                payload);
 }
 
 }  // namespace pw::rpc::internal

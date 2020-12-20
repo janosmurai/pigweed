@@ -12,12 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/go.gni")
 import("$dir_pw_build/host_tool.gni")
 import("$dir_pw_docgen/docs.gni")
+
 pw_doc_group("docs") {
   sources = [ "docs.rst" ]
 }
@@ -33,9 +33,9 @@ pw_go_executable("pw_target_runner_server") {
 }
 
 pw_host_tool("simple_client") {
-  deps = [ ":pw_target_runner_client" ]
+  tool = ":pw_target_runner_client"
 }
 
 pw_host_tool("simple_server") {
-  deps = [ ":pw_target_runner_server" ]
+  tool = ":pw_target_runner_server"
 }

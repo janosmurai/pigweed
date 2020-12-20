@@ -14,7 +14,6 @@
 
 #include <cinttypes>
 
-#include "pw_boot_armv7m/boot.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_sys_io/sys_io.h"
 
@@ -133,49 +132,9 @@ volatile GpioBlock& gpio_a =
 volatile UsartBlock& usart1 =
     *reinterpret_cast<volatile UsartBlock*>(kApb2PeripheralBase + 0x1000U);
 
-// Default handler to insert into the ARMv7-M vector table (below).
-// This function exists for convenience. If a device isn't doing what you
-// expect, it might have hit a fault and ended up here.
-void DefaultFaultHandler(void) {
-  while (true) {
-    // Wait for debugger to attach.
-  }
-}
-
-// This is the device's interrupt vector table. It's not referenced in any
-// code because the platform (STM32F4xx) expects this table to be present at the
-// beginning of flash. The exact address is specified in the pw_boot_armv7m
-// configuration as part of the target config.
-//
-// For more information, see ARMv7-M Architecture Reference Manual DDI 0403E.b
-// section B1.5.3.
-
-// This typedef is for convenience when building the vector table. With the
-// exception of SP_main (0th entry in the vector table), all the entries of the
-// vector table are function pointers.
-typedef void (*InterruptHandler)();
-
-PW_KEEP_IN_SECTION(".vector_table")
-const InterruptHandler vector_table[] = {
-    // The starting location of the stack pointer.
-    // This address is NOT an interrupt handler/function pointer, it is simply
-    // the address that the main stack pointer should be initialized to. The
-    // value is reinterpret casted because it needs to be in the vector table.
-    [0] = reinterpret_cast<InterruptHandler>(&pw_stack_high_addr),
-
-    // Reset handler, dictates how to handle reset interrupt. This is the
-    // address that the Program Counter (PC) is initialized to at boot.
-    [1] = pw_BootEntry,
-
-    // NMI handler.
-    [2] = DefaultFaultHandler,
-    // HardFault handler.
-    [3] = DefaultFaultHandler,
-};
-
 }  // namespace
 
-extern "C" void pw_PreMainInit() {
+extern "C" void pw_sys_io_Init() {
   // Enable 'A' GIPO clocks.
   platform_rcc.ahb1_config |= kGpioAEnable;
 
@@ -211,11 +170,21 @@ namespace pw::sys_io {
 // see if a byte is ready yet.
 Status ReadByte(std::byte* dest) {
   while (true) {
-    if (usart1.status & kReadDataReady) {
-      *dest = static_cast<std::byte>(usart1.data_register);
+    if (TryReadByte(dest).ok()) {
+      return Status::Ok();
     }
   }
-  return Status::OK;
+}
+
+// Wait for a byte to read on USART1. This blocks until a byte is read. This is
+// extremely inefficient as it requires the target to burn CPU cycles polling to
+// see if a byte is ready yet.
+Status TryReadByte(std::byte* dest) {
+  if (!(usart1.status & kReadDataReady)) {
+    return Status::Unavailable();
+  }
+  *dest = static_cast<std::byte>(usart1.data_register);
+  return Status::Ok();
 }
 
 // Send a byte over USART1. Since this blocks on every byte, it's rather
@@ -228,20 +197,20 @@ Status WriteByte(std::byte b) {
   while (!(usart1.status & kTxRegisterEmpty)) {
   }
   usart1.data_register = static_cast<uint32_t>(b);
-  return Status::OK;
+  return Status::Ok();
 }
 
 // Writes a string using pw::sys_io, and add newline characters at the end.
 StatusWithSize WriteLine(const std::string_view& s) {
   size_t chars_written = 0;
-  StatusWithSize result = WriteBytes(as_bytes(span(s)));
+  StatusWithSize result = WriteBytes(std::as_bytes(std::span(s)));
   if (!result.ok()) {
     return result;
   }
   chars_written += result.size();
 
-  // Write trailing newline ("\n\r").
-  result = WriteBytes(as_bytes(span("\n\r", 2)));
+  // Write trailing newline.
+  result = WriteBytes(std::as_bytes(std::span("\r\n", 2)));
   chars_written += result.size();
 
   return StatusWithSize(result.status(), chars_written);

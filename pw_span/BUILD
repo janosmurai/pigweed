@@ -24,7 +24,8 @@ licenses(["notice"])  # Apache License 2.0
 
 pw_cc_library(
     name = "pw_span",
-    hdrs = ["public/pw_span/span.h"],
+    srcs = ["public/pw_span/internal/span.h"],
+    hdrs = ["public_overrides/span"],
     includes = ["public"],
     deps = ["//pw_polyfill"],
 )

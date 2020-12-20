@@ -14,17 +14,19 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 #include "pw_assert/assert.h"
-#include "pw_span/span.h"
 #include "pw_status/status.h"
 
 namespace pw::rpc {
 namespace internal {
 
-class BaseServerWriter;
+class BaseClientCall;
 
 }  // namespace internal
+
+class Client;
 
 class ChannelOutput {
  public:
@@ -36,11 +38,22 @@ class ChannelOutput {
 
   constexpr const char* name() const { return name_; }
 
-  // Acquire a buffer into which to write an outgoing RPC packet.
-  virtual span<std::byte> AcquireBuffer() = 0;
+  // Acquire a buffer into which to write an outgoing RPC packet. The
+  // implementation is expected to handle synchronization if necessary.
+  virtual std::span<std::byte> AcquireBuffer() = 0;
 
-  // Sends the contents of the buffer from AcquireBuffer().
-  virtual void SendAndReleaseBuffer(size_t size) = 0;
+  // Sends the contents of a buffer previously obtained from AcquireBuffer().
+  // This may be called with an empty span, in which case the buffer should be
+  // released without sending any data.
+  //
+  // Returns OK if the operation succeeded, or an implementation-defined Status
+  // value if there was an error. The implementation must NOT return
+  // FAILED_PRECONDITION or INTERNAL, which are reserved by pw_rpc.
+  virtual Status SendAndReleaseBuffer(std::span<const std::byte> buffer) = 0;
+
+  void DiscardBuffer(std::span<const std::byte> buffer) {
+    SendAndReleaseBuffer(buffer.first(0));
+  }
 
  private:
   const char* name_;
@@ -51,7 +64,8 @@ class Channel {
   static constexpr uint32_t kUnassignedChannelId = 0;
 
   // Creates a dynamically assignable channel without a set ID or output.
-  constexpr Channel() : id_(kUnassignedChannelId), output_(nullptr) {}
+  constexpr Channel()
+      : id_(kUnassignedChannelId), output_(nullptr), client_(nullptr) {}
 
   // Creates a channel with a static ID. The channel's output can also be
   // static, or it can set to null to allow dynamically opening connections
@@ -65,22 +79,29 @@ class Channel {
   constexpr uint32_t id() const { return id_; }
   constexpr bool assigned() const { return id_ != kUnassignedChannelId; }
 
- private:
-  friend class Server;
-  friend class internal::BaseServerWriter;
-
-  span<std::byte> AcquireBuffer() const { return output_->AcquireBuffer(); }
-  void SendAndReleaseBuffer(size_t size) const {
-    output_->SendAndReleaseBuffer(size);
-  }
-
+ protected:
   constexpr Channel(uint32_t id, ChannelOutput* output)
-      : id_(id), output_(output) {
-    PW_CHECK_UINT_NE(id, kUnassignedChannelId);
+      : id_(id), output_(output), client_(nullptr) {
+    // TODO(pwbug/246): Use PW_ASSERT when that is available.
+    // PW_ASSERT(id != kUnassignedChannelId);
   }
+
+  ChannelOutput& output() const {
+    // TODO(pwbug/246): Use PW_ASSERT when that is available.
+    // PW_ASSERT(output_ != nullptr);
+    return *output_;
+  }
+
+ private:
+  friend class internal::BaseClientCall;
+  friend class Client;
+
+  constexpr Client* client() const { return client_; }
+  constexpr void set_client(Client* client) { client_ = client; }
 
   uint32_t id_;
   ChannelOutput* output_;
+  Client* client_;
 };
 
 }  // namespace pw::rpc

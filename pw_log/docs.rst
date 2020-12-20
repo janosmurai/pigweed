@@ -1,8 +1,4 @@
-.. _chapter-pw-log:
-
-.. default-domain:: cpp
-
-.. highlight:: cpp
+.. _module-pw_log:
 
 ------
 pw_log
@@ -22,6 +18,7 @@ long-form names.
 .. code-block:: cpp
 
   #define PW_LOG_MODULE_NAME "BLE"
+
   #include "pw_log/log.h"
 
   int main() {
@@ -41,6 +38,7 @@ names and go for shorter log macros.
 
   #define PW_LOG_MODULE_NAME "BLE"
   #define PW_LOG_USE_ULTRA_SHORT_NAMES 1
+
   #include "pw_log/log.h"
 
   int main() {
@@ -140,21 +138,63 @@ system, intended to be used directly.
 
   Shorthand for `PW_LOG(PW_LOG_DEFAULT_FLAGS, <level>, fmt, ...)`.
 
-Filtering logs
---------------
+Option macros
+-------------
+This module defines macros that can be overridden to control the behavior of
+``pw_log`` statements. To override these macros, add ``#define`` statements
+for them before including headers.
 
-``pw_log`` supports compile time filtering of logs through two mechanisms.
+The option macro definitions must be visibile to ``pw_log/log.h`` the first time
+it is included. To handle potential transitive includes, place these
+``#defines`` before all ``#include`` statements. This should only be done in
+source files, not headers. For example:
 
-1. Filter by level. Source files that define ``PW_LOG_LEVEL`` will display all
-   logs at or above the chosen level.
+  .. code-block:: cpp
+
+    // Set the pw_log option macros here, before ALL of the #includes.
+    #define PW_LOG_MODULE_NAME "Calibration"
+    #define PW_LOG_LEVEL PW_LOG_LEVEL_WARN
+
+    #include <array>
+    #include <random>
+
+    #include "devices/hal9000.h"
+    #include "pw_log/log.h"
+    #include "pw_rpc/server.h"
+
+    int MyFunction() {
+      PW_LOG_INFO("hello???");
+    }
+
+.. c:macro:: PW_LOG_MODULE_NAME
+
+  A string literal module name to use in logs. Log backends may attach this
+  name to log messages or use it for runtime filtering. Defaults to ``""``. The
+  ``PW_LOG_MODULE_NAME_DEFINED`` macro is set to ``1`` or ``0`` to indicate
+  whether ``PW_LOG_MODULE_NAME`` was overridden.
+
+.. c:macro:: PW_LOG_DEFAULT_FLAGS
+
+  Log flags to use for the ``PW_LOG_<level>`` macros. Different flags may be
+  applied when using the ``PW_LOG`` macro directly.
+
+  Log backends use flags to change how they handle individual log messages.
+  Potential uses include assigning logs priority or marking them as containing
+  personal information. Defaults to ``0``.
+
+.. c:macro:: PW_LOG_LEVEL
+
+   Filters logs by level. Source files that define ``PW_LOG_LEVEL`` will display
+   only logs at or above the chosen level. Log statements below this level will
+   be compiled out of optimized builds. Defaults to ``PW_LOG_LEVEL_DEBUG``.
 
    Example:
 
    .. code-block:: cpp
 
-     #include "pw_log/log.h"
-
      #define PW_LOG_LEVEL PW_LOG_LEVEL_INFO
+
+     #include "pw_log/log.h"
 
      void DoSomething() {
        PW_LOG_DEBUG("This won't be logged at all");
@@ -162,13 +202,22 @@ Filtering logs
        PW_LOG_WARN("This is above INFO level, and will display");
      }
 
-2. Filter by arbitrary expression based on ``level`` and ``flags``. Source
-   files that define ``PW_LOG_ENABLE_IF(level, flags)`` will display if the
-   given expression returns true.
+.. c:function:: PW_LOG_ENABLE_IF(level, flags)
+
+   Filters logs by an arbitrary expression based on ``level`` and ``flags``.
+   Source files that define ``PW_LOG_ENABLE_IF(level, flags)`` will display if
+   the given expression evaluates true.
 
    Example:
 
    .. code-block:: cpp
+
+     // Pigweed's log facade will call this macro to decide to log or not. In
+     // this case, it will drop logs with the PII flag set if display of PII is
+     // not enabled for the application.
+     #define PW_LOG_ENABLE_IF(level, flags) \
+         (level >= PW_LOG_LEVEL_INFO && \
+          !((flags & MY_PRODUCT_PII_MASK) && MY_PRODUCT_LOG_PII_ENABLED)
 
      #include "pw_log/log.h"
 
@@ -177,13 +226,6 @@ Filtering logs
 
      // This is the PII mask bit selected by the application.
      #define MY_PRODUCT_PII_MASK (1 << 5)
-
-     // Pigweed's log facade will call this macro to decide to log or not. In
-     // this case, it will drop logs with the PII flag set if display of PII is
-     // not enabled for the application.
-     #define PW_LOG_ENABLE_IF(level, flags) \
-         (level >= PW_LOG_INFO && \
-          !((flags & MY_PRODUCT_PII_MASK) && MY_PRODUCT_LOG_PII_ENABLED)
 
      void DoSomethingWithSensitiveInfo() {
        PW_LOG_DEBUG("This won't be logged at all");
@@ -282,15 +324,15 @@ library for compatibility with non-embedded code. While it is effective for
 porting server code to microcontrollers quickly, we do not advise embedded
 projects use that approach unless absolutely necessary.
 
-- See also :ref:`chapter-pw-log-tokenized` for details on leveraging Pigweed's
+- See also :ref:`module-pw_log_tokenized` for details on leveraging Pigweed's
   tokenizer module for logging.
-- See also :ref:`chapter-pw-tokenizer` for details on Pigweed's tokenizer,
+- See also :ref:`module-pw_tokenizer` for details on Pigweed's tokenizer,
   which is useful for more than just logging.
 
 Why does the facade use header redirection instead of C functions?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Without header redirection, it is not possible to do sophisticated macro
-transforms in the backkend. For example, to apply tokenization to log strings,
+transforms in the backend. For example, to apply tokenization to log strings,
 the backend must define the handling macros. Additionally, compile-time
 filtering by log level or flags is not possible without header redirection.
 While it may be possible to do the filtering in the facade, that would imply

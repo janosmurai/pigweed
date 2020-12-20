@@ -14,36 +14,36 @@
 
 #include "pw_tokenizer/base64.h"
 
-#include "pw_base64/base64.h"
-#include "pw_span/span.h"
-
 namespace pw::tokenizer {
 
-extern "C" size_t pw_TokenizerPrefixedBase64Encode(
+extern "C" size_t pw_tokenizer_PrefixedBase64Encode(
     const void* binary_message,
     size_t binary_size_bytes,
     void* output_buffer,
     size_t output_buffer_size_bytes) {
-  const size_t encoded_size = base64::EncodedSize(binary_size_bytes) + 1;
+  char* output = static_cast<char*>(output_buffer);
+  const size_t encoded_size = Base64EncodedBufferSize(binary_size_bytes);
 
   if (output_buffer_size_bytes < encoded_size) {
+    if (output_buffer_size_bytes > 0u) {
+      output[0] = '\0';
+    }
+
     return 0;
   }
 
-  char* output = static_cast<char*>(output_buffer);
   output[0] = kBase64Prefix;
-
-  base64::Encode(
-      span(static_cast<const std::byte*>(binary_message), binary_size_bytes),
-      &output[1]);
-
-  return encoded_size;
+  base64::Encode(std::span(static_cast<const std::byte*>(binary_message),
+                           binary_size_bytes),
+                 &output[1]);
+  output[encoded_size - 1] = '\0';
+  return encoded_size - sizeof('\0');  // exclude the null terminator
 }
 
-extern "C" size_t pw_TokenizerPrefixedBase64Decode(const void* base64_message,
-                                                   size_t base64_size_bytes,
-                                                   void* output_buffer,
-                                                   size_t output_buffer_size) {
+extern "C" size_t pw_tokenizer_PrefixedBase64Decode(const void* base64_message,
+                                                    size_t base64_size_bytes,
+                                                    void* output_buffer,
+                                                    size_t output_buffer_size) {
   const char* base64 = static_cast<const char*>(base64_message);
 
   if (base64_size_bytes == 0 || base64[0] != kBase64Prefix) {
@@ -52,7 +52,7 @@ extern "C" size_t pw_TokenizerPrefixedBase64Decode(const void* base64_message,
 
   return base64::Decode(
       std::string_view(&base64[1], base64_size_bytes - 1),
-      span(static_cast<std::byte*>(output_buffer), output_buffer_size));
+      std::span(static_cast<std::byte*>(output_buffer), output_buffer_size));
 }
 
 }  // namespace pw::tokenizer

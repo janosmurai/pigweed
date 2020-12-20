@@ -68,6 +68,8 @@ PW_PACKED(struct) ArmV7mExtraRegisters {
   uint32_t mmfar;
   uint32_t bfar;
   uint32_t icsr;
+  uint32_t hfsr;
+  uint32_t shcsr;
   // Special registers.
   uint32_t exc_return;
   uint32_t msp;
@@ -84,12 +86,12 @@ PW_PACKED(struct) ArmV7mExtraRegisters {
   uint32_t r11;
 };
 
-PW_PACKED(struct) CpuState {
-  ArmV7mExtraRegisters extended;
-  ArmV7mFaultRegisters base;
+}  // namespace pw::cpu_exception
+
+PW_PACKED(struct) pw_CpuExceptionState {
+  pw::cpu_exception::ArmV7mExtraRegisters extended;
+  pw::cpu_exception::ArmV7mFaultRegisters base;
   // TODO(amontanez): FPU registers may or may not be here as well. Make the
   // availability of the FPU registers a compile-time configuration when FPU
   // register support is added.
 };
-
-}  // namespace pw::cpu_exception

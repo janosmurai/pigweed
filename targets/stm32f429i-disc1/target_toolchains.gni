@@ -12,10 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_rpc/system_server/backend.gni")
+import("$dir_pw_sys_io/backend.gni")
 import("$dir_pw_toolchain/arm_gcc/toolchains.gni")
+
 declare_args() {
   # Enable the pw_target_runner for on-device testing.
   pw_use_test_server = false
@@ -43,25 +45,41 @@ _target_config = {
   # Facade backends
   pw_assert_BACKEND = dir_pw_assert_basic
   pw_boot_BACKEND = dir_pw_boot_armv7m
-  pw_cpu_exception_BACKEND = dir_pw_cpu_exception_armv7m
+  pw_cpu_exception_ENTRY_BACKEND = dir_pw_cpu_exception_armv7m
+  pw_cpu_exception_HANDLER_BACKEND = "$dir_pw_cpu_exception:basic_handler"
+  pw_cpu_exception_SUPPORT_BACKEND = "$dir_pw_cpu_exception_armv7m:support"
   pw_log_BACKEND = dir_pw_log_basic
   pw_sys_io_BACKEND = dir_pw_sys_io_baremetal_stm32f429
+  pw_rpc_system_server_BACKEND = "$dir_pw_rpc/system_server:sys_io"
+  pw_malloc_BACKEND = dir_pw_malloc_freelist
 
   pw_boot_armv7m_LINK_CONFIG_DEFINES = [
     "PW_BOOT_FLASH_BEGIN=0x08000200",
     "PW_BOOT_FLASH_SIZE=512K",
-    "PW_BOOT_HEAP_SIZE=0",
+
+    # TODO(pwbug/219): Currently "pw_tokenizer/detokenize_test" requires at
+    # least 6K bytes in heap when using pw_malloc_freelist. The heap size
+    # required for tests should be investigated.
+    "PW_BOOT_HEAP_SIZE=7K",
     "PW_BOOT_MIN_STACK_SIZE=1K",
     "PW_BOOT_RAM_BEGIN=0x20000000",
     "PW_BOOT_RAM_SIZE=192K",
     "PW_BOOT_VECTOR_TABLE_BEGIN=0x08000000",
     "PW_BOOT_VECTOR_TABLE_SIZE=512",
   ]
+
+  current_cpu = "arm"
+  current_os = ""
 }
 
 _toolchain_properties = {
   final_binary_extension = ".elf"
 }
+
+_target_default_configs = [
+  "$dir_pw_build:extra_strict_warnings",
+  "$dir_pw_toolchain/arm_gcc:enable_float_printf",
+]
 
 pw_target_toolchain_stm32f429i_disc1 = {
   _excluded_members = [
@@ -77,6 +95,7 @@ pw_target_toolchain_stm32f429i_disc1 = {
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_target_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -88,6 +107,7 @@ pw_target_toolchain_stm32f429i_disc1 = {
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_target_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -99,6 +119,7 @@ pw_target_toolchain_stm32f429i_disc1 = {
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_target_config, "*")
+      default_configs += _target_default_configs
     }
   }
 }

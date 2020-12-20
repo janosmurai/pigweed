@@ -13,14 +13,7 @@
 # the License.
 """pw_module"""
 
-import unittest
-import setuptools
-
-
-def test_suite():
-    """Test suite for pw_module module."""
-    return unittest.TestLoader().discover('./', pattern='*_test.py')
-
+import setuptools  # type: ignore
 
 setuptools.setup(
     name='pw_module',
@@ -29,5 +22,6 @@ setuptools.setup(
     author_email='pigweed-developers@googlegroups.com',
     description='Meta-module for Pigweed',
     packages=setuptools.find_packages(),
-    test_suite='setup.test_suite',
+    package_data={'pw_module': ['py.typed']},
+    zip_safe=False,
 )

@@ -1,8 +1,4 @@
-.. _chapter-style:
-
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _docs-pw-style:
 
 ===========================
 Style Guide and Conventions
@@ -197,7 +193,7 @@ Control statements
 ==================
 All loops and conditional statements must use braces.
 
-The syntax ``while (true)`` if preferred over ``for (;;)`` for infinite loops.
+The syntax ``while (true)`` is preferred over ``for (;;)`` for infinite loops.
 
 Include guards
 ==============

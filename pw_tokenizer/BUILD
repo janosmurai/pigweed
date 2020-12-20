@@ -27,6 +27,7 @@ pw_cc_library(
     name = "pw_tokenizer",
     srcs = [
         "encode_args.cc",
+        "hash.cc",
         "public/pw_tokenizer/config.h",
         "public/pw_tokenizer/internal/argument_types.h",
         "public/pw_tokenizer/internal/argument_types_macro_4_byte.h",
@@ -39,7 +40,7 @@ pw_cc_library(
         "tokenize.cc",
     ],
     hdrs = [
-        "public/pw_tokenizer/pw_tokenizer_65599_fixed_length_hash.h",
+        "public/pw_tokenizer/hash.h",
         "public/pw_tokenizer/tokenize.h",
     ],
     includes = ["public"],
@@ -150,8 +151,8 @@ cc_binary(
 pw_cc_test(
     name = "argument_types_test",
     srcs = [
-        "argument_types_test_c.c",
         "argument_types_test.cc",
+        "argument_types_test_c.c",
         "pw_tokenizer_private/argument_types_test.h",
         "tokenize_test_fakes.cc",
     ],
@@ -202,8 +203,8 @@ pw_cc_test(
 pw_cc_test(
     name = "global_handlers_test",
     srcs = [
-        "global_handlers_test_c.c",
         "global_handlers_test.cc",
+        "global_handlers_test_c.c",
         "pw_tokenizer_private/tokenize_test.h",
     ],
     deps = [
@@ -252,8 +253,8 @@ pw_cc_test(
     name = "tokenize_test",
     srcs = [
         "pw_tokenizer_private/tokenize_test.h",
-        "tokenize_test_c.c",
         "tokenize_test.cc",
+        "tokenize_test_c.c",
     ],
     deps = [
         ":pw_tokenizer",

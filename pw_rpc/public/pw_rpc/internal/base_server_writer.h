@@ -14,55 +14,81 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <utility>
 
-#include "pw_rpc/channel.h"
-#include "pw_rpc/server_context.h"
-#include "pw_span/span.h"
+#include "pw_containers/intrusive_list.h"
+#include "pw_rpc/internal/call.h"
+#include "pw_rpc/internal/channel.h"
+#include "pw_rpc/internal/method.h"
+#include "pw_rpc/service.h"
+#include "pw_status/status.h"
 
-namespace pw::rpc::internal {
+namespace pw::rpc {
 
-class Method;
+class Server;
+
+namespace internal {
+
 class Packet;
 
 // Internal ServerWriter base class. ServerWriters are used to stream responses.
 // Implementations must provide a derived class that provides the interface for
 // sending responses.
-//
-// TODO(hepler): ServerWriters need to be tracked by the server to support
-// cancelling / terminating ongoing streaming RPCs.
-class BaseServerWriter {
+class BaseServerWriter : public IntrusiveList<BaseServerWriter>::Item {
  public:
-  constexpr BaseServerWriter(ServerCall& context)
-      : context_(context), state_{kOpen} {}
-
-  BaseServerWriter(BaseServerWriter&& other) { *this = std::move(other); }
-  BaseServerWriter& operator=(BaseServerWriter&& other);
+  BaseServerWriter(ServerCall& call);
 
   BaseServerWriter(const BaseServerWriter&) = delete;
+
+  BaseServerWriter(BaseServerWriter&& other) : state_(kClosed) {
+    *this = std::move(other);
+  }
+
+  ~BaseServerWriter() { Finish(); }
+
   BaseServerWriter& operator=(const BaseServerWriter&) = delete;
+
+  BaseServerWriter& operator=(BaseServerWriter&& other);
 
   // True if the ServerWriter is active and ready to send responses.
   bool open() const { return state_ == kOpen; }
 
+  uint32_t channel_id() const { return call_.channel().id(); }
+  uint32_t service_id() const { return call_.service().id(); }
+  uint32_t method_id() const;
+
   // Closes the ServerWriter, if it is open.
-  void close();
+  void Finish(Status status = Status::Ok());
 
  protected:
   constexpr BaseServerWriter() : state_{kClosed} {}
 
-  const Method& method() const { return context_.method(); }
+  const Method& method() const { return call_.method(); }
 
-  span<std::byte> AcquireBuffer();
+  const Channel& channel() const { return call_.channel(); }
 
-  Status SendAndReleaseBuffer(span<const std::byte> payload);
+  constexpr const Channel::OutputBuffer& buffer() const { return response_; }
+
+  std::span<std::byte> AcquirePayloadBuffer();
+
+  // Releases the buffer, sending a packet with the specified payload.
+  Status ReleasePayloadBuffer(std::span<const std::byte> payload);
+
+  // Releases the buffer without sending a packet.
+  Status ReleasePayloadBuffer();
 
  private:
-  Packet packet() const;
+  friend class rpc::Server;
 
-  ServerCall context_;
-  span<std::byte> response_;
+  void Close();
+
+  Packet ResponsePacket(std::span<const std::byte> payload = {}) const;
+
+  ServerCall call_;
+  Channel::OutputBuffer response_;
   enum { kClosed, kOpen } state_;
 };
 
-}  // namespace pw::rpc::internal
+}  // namespace internal
+}  // namespace pw::rpc

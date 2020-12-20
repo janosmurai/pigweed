@@ -15,6 +15,7 @@
 
 import collections
 import csv
+from dataclasses import dataclass
 from datetime import datetime
 import io
 import logging
@@ -22,11 +23,19 @@ from pathlib import Path
 import re
 import struct
 from typing import BinaryIO, Callable, Dict, Iterable, List, NamedTuple
-from typing import Optional, Tuple, Union, ValuesView
+from typing import Optional, Pattern, Tuple, Union, ValuesView
 
 DATE_FORMAT = '%Y-%m-%d'
+DEFAULT_DOMAIN = ''
 
-DEFAULT_HASH_LENGTH = 96
+# The default hash length to use. This value only applies when hashing strings
+# from a legacy-style ELF with plain strings. New tokenized string entries
+# include the token alongside the string.
+#
+# This MUST match the default value of PW_TOKENIZER_CFG_C_HASH_LENGTH in
+# pw_tokenizer/public/pw_tokenizer/config.h.
+DEFAULT_C_HASH_LENGTH = 128
+
 TOKENIZER_HASH_CONSTANT = 65599
 
 _LOG = logging.getLogger('pw_tokenizer')
@@ -38,7 +47,11 @@ def _value(char: Union[int, str]) -> int:
 
 def pw_tokenizer_65599_fixed_length_hash(string: Union[str, bytes],
                                          hash_length: int) -> int:
-    """Hashes the provided string."""
+    """Hashes the provided string.
+
+    This hash function is only used when adding tokens from legacy-style
+    tokenized strings in an ELF, which do not include the token.
+    """
     hash_value = len(string)
     coefficient = TOKENIZER_HASH_CONSTANT
 
@@ -50,25 +63,26 @@ def pw_tokenizer_65599_fixed_length_hash(string: Union[str, bytes],
 
 
 def default_hash(string: Union[str, bytes]) -> int:
-    return pw_tokenizer_65599_fixed_length_hash(string, DEFAULT_HASH_LENGTH)
+    return pw_tokenizer_65599_fixed_length_hash(string, DEFAULT_C_HASH_LENGTH)
 
 
-_EntryKey = Tuple[int, str]  # Key for uniquely referring to an entry
+class _EntryKey(NamedTuple):
+    """Uniquely refers to an entry."""
+    token: int
+    string: str
 
 
+@dataclass(eq=True, order=False)
 class TokenizedStringEntry:
     """A tokenized string with its metadata."""
-    def __init__(self,
-                 token: int,
-                 string: str,
-                 date_removed: Optional[datetime] = None):
-        self.token = token
-        self.string = string
-        self.date_removed = date_removed
+    token: int
+    string: str
+    domain: str = DEFAULT_DOMAIN
+    date_removed: Optional[datetime] = None
 
     def key(self) -> _EntryKey:
         """The key determines uniqueness for a tokenized string."""
-        return self.token, self.string
+        return _EntryKey(self.token, self.string)
 
     def update_date_removed(self,
                             new_date_removed: Optional[datetime]) -> None:
@@ -96,22 +110,16 @@ class TokenizedStringEntry:
     def __str__(self) -> str:
         return self.string
 
-    def __repr__(self) -> str:
-        return '{}({!r})'.format(type(self).__name__, self.string)
-
 
 class Database:
     """Database of tokenized strings stored as TokenizedStringEntry objects."""
-    def __init__(self,
-                 entries: Iterable[TokenizedStringEntry] = (),
-                 tokenize: Callable[[str], int] = default_hash):
+    def __init__(self, entries: Iterable[TokenizedStringEntry] = ()):
         """Creates a token database."""
         # The database dict stores each unique (token, string) entry.
         self._database: Dict[_EntryKey, TokenizedStringEntry] = {
             entry.key(): entry
             for entry in entries
         }
-        self.tokenize = tokenize
 
         # This is a cache for fast token lookup that is built as needed.
         self._cache: Optional[Dict[int, List[TokenizedStringEntry]]] = None
@@ -120,10 +128,11 @@ class Database:
     def from_strings(
             cls,
             strings: Iterable[str],
+            domain: str = DEFAULT_DOMAIN,
             tokenize: Callable[[str], int] = default_hash) -> 'Database':
         """Creates a Database from an iterable of strings."""
-        return cls((TokenizedStringEntry(tokenize(string), string)
-                    for string in strings), tokenize)
+        return cls((TokenizedStringEntry(tokenize(string), string, domain)
+                    for string in strings))
 
     @classmethod
     def merged(cls, *databases: 'Database') -> 'Database':
@@ -154,19 +163,19 @@ class Database:
 
     def mark_removals(
             self,
-            all_strings: Iterable[str],
+            all_entries: Iterable[TokenizedStringEntry],
             removal_date: Optional[datetime] = None
     ) -> List[TokenizedStringEntry]:
-        """Marks strings missing from all_strings as having been removed.
+        """Marks entries missing from all_entries as having been removed.
 
-        The strings are assumed to represent the complete set of strings for the
-        database. Strings currently in the database not present in the provided
-        strings are marked with a removal date but remain in the database.
-        Strings in all_strings missing from the database are NOT added; call the
-        add function to add these strings.
+        The entries are assumed to represent the complete set of entries for the
+        database. Entries currently in the database not present in the provided
+        entries are marked with a removal date but remain in the database.
+        Entries in all_entries missing from the database are NOT added; call the
+        add function to add these.
 
         Args:
-          all_strings: the complete set of strings present in the database
+          all_entries: the complete set of strings present in the database
           removal_date: the datetime for removed entries; today by default
 
         Returns:
@@ -177,13 +186,12 @@ class Database:
         if removal_date is None:
             removal_date = datetime.now()
 
-        all_strings = frozenset(all_strings)  # for faster lookup
+        all_keys = frozenset(entry.key() for entry in all_entries)
 
         removed = []
 
-        # Mark this entry as having been removed from the ELF.
         for entry in self._database.values():
-            if (entry.string not in all_strings
+            if (entry.key() not in all_keys
                     and (entry.date_removed is None
                          or removal_date < entry.date_removed)):
                 # Add a removal date, or update it to the oldest date.
@@ -192,20 +200,19 @@ class Database:
 
         return removed
 
-    def add(self, strings: Iterable[str]) -> None:
-        """Adds new strings to the database."""
+    def add(self, entries: Iterable[TokenizedStringEntry]) -> None:
+        """Adds new entries and updates date_removed for existing entries."""
         self._cache = None
 
-        # Add new and update previously removed entries.
-        for string in strings:
-            key = self.tokenize(string), string
-
+        for new_entry in entries:
+            # Update an existing entry or create a new one.
             try:
-                entry = self._database[key]
-                if entry.date_removed:
-                    entry.date_removed = None
+                entry = self._database[new_entry.key()]
+                entry.domain = new_entry.domain
+                entry.date_removed = None
             except KeyError:
-                self._database[key] = TokenizedStringEntry(key[0], string)
+                self._database[new_entry.key()] = TokenizedStringEntry(
+                    new_entry.token, new_entry.string, new_entry.domain)
 
     def purge(
         self,
@@ -240,13 +247,19 @@ class Database:
                 else:
                     self._database[key] = entry
 
-    def filter(self, include: Iterable = (), exclude: Iterable = ()) -> None:
+    def filter(
+        self,
+        include: Iterable[Union[str, Pattern[str]]] = (),
+        exclude: Iterable[Union[str, Pattern[str]]] = (),
+        replace: Iterable[Tuple[Union[str, Pattern[str]], str]] = ()
+    ) -> None:
         """Filters the database using regular expressions (strings or compiled).
 
-    Args:
-      include: iterable of regexes; only entries matching at least one are kept
-      exclude: iterable of regexes; entries matching any of these are removed
-    """
+        Args:
+          include: regexes; only entries matching at least one are kept
+          exclude: regexes; entries matching any of these are removed
+          replace: (regex, str) tuples; replaces matching terms in all entries
+        """
         self._cache = None
 
         to_delete: List[_EntryKey] = []
@@ -259,12 +272,17 @@ class Database:
 
         if exclude:
             exclude_re = [re.compile(pattern) for pattern in exclude]
-            to_delete.extend(key for key, val in self._database.items()  #
-                             if any(
-                                 rgx.search(val.string) for rgx in exclude_re))
+            to_delete.extend(key for key, val in self._database.items() if any(
+                rgx.search(val.string) for rgx in exclude_re))
 
         for key in to_delete:
             del self._database[key]
+
+        for search, replacement in replace:
+            search = re.compile(search)
+
+            for value in self._database.values():
+                value.string = search.sub(replacement, value.string)
 
     def __len__(self) -> int:
         """Returns the number of entries in the database."""
@@ -287,7 +305,8 @@ def parse_csv(fd) -> Iterable[TokenizedStringEntry]:
             date = (datetime.strptime(date_str, DATE_FORMAT)
                     if date_str.strip() else None)
 
-            yield TokenizedStringEntry(token, string_literal, date)
+            yield TokenizedStringEntry(token, string_literal, DEFAULT_DOMAIN,
+                                       date)
         except (ValueError, UnicodeDecodeError) as err:
             _LOG.error('Failed to parse tokenized string entry %s: %s', line,
                        err)
@@ -315,6 +334,10 @@ class _BinaryFileFormat(NamedTuple):
 BINARY_FORMAT = _BinaryFileFormat()
 
 
+class DatabaseFormatError(Exception):
+    """Failed to parse a token database file."""
+
+
 def file_is_binary_database(fd: BinaryIO) -> bool:
     """True if the file starts with the binary token database magic string."""
     try:
@@ -326,15 +349,37 @@ def file_is_binary_database(fd: BinaryIO) -> bool:
         return False
 
 
+def _check_that_file_is_csv_database(path: Path) -> None:
+    """Raises an error unless the path appears to be a CSV token database."""
+    try:
+        with path.open('rb') as fd:
+            data = fd.read(8)  # Read 8 bytes, which should be the first token.
+
+        if not data:
+            return  # File is empty, which is valid CSV.
+
+        if len(data) != 8:
+            raise DatabaseFormatError(
+                f'Attempted to read {path} as a CSV token database, but the '
+                f'file is too short ({len(data)} B)')
+
+        # Make sure the first 8 chars are a valid hexadecimal number.
+        _ = int(data.decode(), 16)
+    except (IOError, UnicodeDecodeError, ValueError) as err:
+        raise DatabaseFormatError(
+            f'Encountered error while reading {path} as a CSV token database'
+        ) from err
+
+
 def parse_binary(fd: BinaryIO) -> Iterable[TokenizedStringEntry]:
     """Parses TokenizedStringEntries from a binary token database file."""
     magic, entry_count = BINARY_FORMAT.header.unpack(
         fd.read(BINARY_FORMAT.header.size))
 
     if magic != BINARY_FORMAT.magic:
-        raise ValueError(
-            'Magic number mismatch (found {!r}, expected {!r})'.format(
-                magic, BINARY_FORMAT.magic))
+        raise DatabaseFormatError(
+            f'Binary token database magic number mismatch (found {magic!r}, '
+            f'expected {BINARY_FORMAT.magic!r}) while reading from {fd}')
 
     entries = []
 
@@ -360,7 +405,7 @@ def parse_binary(fd: BinaryIO) -> Iterable[TokenizedStringEntry]:
     offset = 0
     for token, removed in entries:
         string, offset = read_string(offset)
-        yield TokenizedStringEntry(token, string, removed)
+        yield TokenizedStringEntry(token, string, DEFAULT_DOMAIN, removed)
 
 
 def write_binary(database: Database, fd: BinaryIO) -> None:
@@ -397,9 +442,9 @@ def write_binary(database: Database, fd: BinaryIO) -> None:
 class DatabaseFile(Database):
     """A token database that is associated with a particular file.
 
-  This class adds the write_to_file() method that writes to file from which it
-  was created in the correct format (CSV or binary).
-  """
+    This class adds the write_to_file() method that writes to file from which it
+    was created in the correct format (CSV or binary).
+    """
     def __init__(self, path: Union[Path, str]):
         self.path = Path(path)
 
@@ -411,6 +456,7 @@ class DatabaseFile(Database):
                 return
 
         # Read the path as a CSV file.
+        _check_that_file_is_csv_database(self.path)
         with self.path.open('r', newline='') as file:
             super().__init__(parse_csv(file))
             self._export = write_csv

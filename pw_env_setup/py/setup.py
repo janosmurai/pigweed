@@ -11,16 +11,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""env_setup module definition for PyOxidizer."""
+"""pw_env_setup package definition."""
 
-import unittest
-import setuptools
-
-
-def test_suite():
-    """Test suite for env_setup module."""
-    return unittest.TestLoader().discover('./', pattern='*_test.py')
-
+import setuptools  # type: ignore
 
 setuptools.setup(
     name='pw_env_setup',
@@ -29,12 +22,12 @@ setuptools.setup(
     author_email='pigweed-developers@googlegroups.com',
     description='Environment setup for Pigweed',
     packages=setuptools.find_packages(),
-    test_suite='setup.test_suite',
     entry_points={
         'console_scripts': ['_pw_env_setup = pw_env_setup.env_setup:main'],
     },
     package_data={
         'pw_env_setup': [
+            'py.typed',
             'cargo_setup/packages.txt',
             'cipd_setup/luci.json',
             'cipd_setup/pigweed.json',
@@ -42,4 +35,5 @@ setuptools.setup(
             'virtualenv_setup/requirements.txt',
         ],
     },
+    zip_safe=False,
 )

@@ -12,7 +12,6 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/input_group.gni")
@@ -21,6 +20,7 @@ import("$dir_pw_docgen/docs.gni")
 import("$dir_pw_fuzzer/fuzzer.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_unit_test/test.gni")
+
 config("default_config") {
   include_dirs = [ "public" ]
 }
@@ -28,14 +28,17 @@ config("default_config") {
 pw_source_set("pw_protobuf") {
   public_configs = [ ":default_config" ]
   public_deps = [
-    "$dir_pw_status",
-    "$dir_pw_varint",
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+    dir_pw_varint,
   ]
   public = [
     "public/pw_protobuf/codegen.h",
     "public/pw_protobuf/decoder.h",
     "public/pw_protobuf/encoder.h",
     "public/pw_protobuf/find.h",
+    "public/pw_protobuf/serialized_size.h",
     "public/pw_protobuf/wire_format.h",
   ]
   sources = [
@@ -43,7 +46,6 @@ pw_source_set("pw_protobuf") {
     "encoder.cc",
     "find.cc",
   ]
-  sources += public
 }
 
 pw_doc_group("docs") {
@@ -54,15 +56,6 @@ pw_doc_group("docs") {
   report_deps = [
     "size_report:decoder_full",
     "size_report:decoder_incremental",
-  ]
-}
-
-# Source files for pw_protobuf's protoc plugin.
-pw_input_group("codegen_protoc_plugin") {
-  inputs = [
-    "py/pw_protobuf/codegen_pwpb.py",
-    "py/pw_protobuf/plugin.py",
-    "py/pw_protobuf/proto_tree.py",
   ]
 }
 
@@ -92,8 +85,12 @@ pw_test("find_test") {
 }
 
 pw_test("codegen_test") {
-  deps = [ ":codegen_test_protos_pwpb" ]
+  deps = [ ":codegen_test_protos.pwpb" ]
   sources = [ "codegen_test.cc" ]
+}
+
+pw_proto_library("common_protos") {
+  sources = [ "pw_protobuf_protos/common.proto" ]
 }
 
 pw_proto_library("codegen_test_protos") {
@@ -101,9 +98,11 @@ pw_proto_library("codegen_test_protos") {
     "pw_protobuf_protos/test_protos/full_test.proto",
     "pw_protobuf_protos/test_protos/imported.proto",
     "pw_protobuf_protos/test_protos/importer.proto",
+    "pw_protobuf_protos/test_protos/non_pw_package.proto",
     "pw_protobuf_protos/test_protos/proto2.proto",
     "pw_protobuf_protos/test_protos/repeated.proto",
   ]
+  deps = [ ":common_protos" ]
 }
 
 pw_fuzzer("encoder_fuzzer") {

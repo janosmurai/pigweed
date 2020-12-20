@@ -12,12 +12,15 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+
 pw_auto_add_simple_module(pw_kvs
   PUBLIC_DEPS
     pw_containers
     pw_status
   PRIVATE_DEPS
     pw_assert
+    pw_bytes
     pw_checksum
     pw_log
     pw_string

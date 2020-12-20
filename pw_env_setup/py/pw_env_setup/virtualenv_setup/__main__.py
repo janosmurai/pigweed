@@ -19,11 +19,20 @@ import sys
 
 # TODO(pwbug/67) switch back to 'from pw_env_setup import virtualenv_setup'.
 # from pw_env_setup import virtualenv_setup
-import install as virtualenv_setup  # pylint: disable=import-error
+# pylint: disable=import-error
+import install as virtualenv_setup  # type: ignore
+# pylint: enable=import-error
 
 
 def _main():
     parser = argparse.ArgumentParser(description=__doc__)
+
+    project_root = os.environ.get('PW_PROJECT_ROOT', None)
+
+    parser.add_argument('--project-root',
+                        default=project_root,
+                        required=not project_root,
+                        help='Path to overall project root.')
     parser.add_argument('--venv_path',
                         required=True,
                         help='Path at which to create the venv')
@@ -32,11 +41,12 @@ def _main():
                         default=[],
                         action='append',
                         help='requirements.txt files to install')
-    parser.add_argument('-s',
-                        '--setup-py-roots',
+    parser.add_argument('--gn-target',
+                        dest='gn_targets',
                         default=[],
                         action='append',
-                        help='places to search for setup.py files')
+                        type=virtualenv_setup.GnTarget,
+                        help='GN targets that install packages')
     parser.add_argument('--quick-setup',
                         dest='full_envsetup',
                         action='store_false',

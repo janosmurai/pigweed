@@ -20,30 +20,68 @@ from pathlib import Path
 import re
 from typing import Container, Dict, Iterable, List, Mapping, Set, Tuple
 
+from pw_package import package_manager
 from pw_presubmit import call, log_run, plural, PresubmitFailure, tools
 
 _LOG = logging.getLogger(__name__)
 
 
+def install_package(root: Path, name: str) -> None:
+    """Install package with given name in given path."""
+    mgr = package_manager.PackageManager(root)
+
+    if not mgr.list():
+        raise PresubmitFailure(
+            'no packages configured, please import your pw_package '
+            'configuration module')
+
+    if not mgr.status(name):
+        mgr.install(name)
+
+
 def gn_args(**kwargs) -> str:
-    """Builds a string to use for the --args argument to gn gen."""
-    return '--args=' + ' '.join(f'{arg}={val}' for arg, val in kwargs.items())
+    """Builds a string to use for the --args argument to gn gen.
+
+    Currently supports bool, int, and str values. In the case of str values,
+    quotation marks will be added automatically, unless the string already
+    contains one or more double quotation marks, or starts with a { or [
+    character, in which case it will be passed through as-is.
+    """
+    transformed_args = []
+    for arg, val in kwargs.items():
+        if isinstance(val, bool):
+            transformed_args.append(f'{arg}={str(val).lower()}')
+            continue
+        if (isinstance(val, str) and '"' not in val and not val.startswith("{")
+                and not val.startswith("[")):
+            transformed_args.append(f'{arg}="{val}"')
+            continue
+        # Fall-back case handles integers as well as strings that already
+        # contain double quotation marks, or look like scopes or lists.
+        transformed_args.append(f'{arg}={val}')
+    return '--args=' + ' '.join(transformed_args)
 
 
 def gn_gen(gn_source_dir: Path,
            gn_output_dir: Path,
            *args: str,
            gn_check: bool = True,
+           gn_fail_on_unused: bool = True,
            **gn_arguments) -> None:
     """Runs gn gen in the specified directory with optional GN args."""
     args_option = (gn_args(**gn_arguments), ) if gn_arguments else ()
-    check_option = ['--check'] if gn_check else []
+
+    # Delete args.gn to ensure this is a clean build.
+    args_gn = gn_output_dir / 'args.gn'
+    if args_gn.is_file():
+        args_gn.unlink()
 
     call('gn',
          'gen',
          gn_output_dir,
          '--color=always',
-         *check_option,
+         *(['--check'] if gn_check else []),
+         *(['--fail-on-unused-args'] if gn_fail_on_unused else []),
          *args,
          *args_option,
          cwd=gn_source_dir)
@@ -56,9 +94,18 @@ def ninja(directory: Path, *args, **kwargs) -> None:
 
 def cmake(source_dir: Path,
           output_dir: Path,
+          *args: str,
           env: Mapping['str', 'str'] = None) -> None:
     """Runs CMake for Ninja on the given source and output directories."""
-    call('cmake', '-B', output_dir, '-S', source_dir, '-G', 'Ninja', env=env)
+    call('cmake',
+         '-B',
+         output_dir,
+         '-S',
+         source_dir,
+         '-G',
+         'Ninja',
+         *args,
+         env=env)
 
 
 def env_with_clang_vars() -> Mapping[str, str]:
@@ -106,7 +153,8 @@ def _search_files_for_paths(build_files: Iterable[Path]) -> Iterable[Path]:
 
 
 def check_builds_for_files(
-        extensions_to_check: Container[str],
+        bazel_extensions_to_check: Container[str],
+        gn_extensions_to_check: Container[str],
         files: Iterable[Path],
         bazel_dirs: Iterable[Path] = (),
         gn_dirs: Iterable[Tuple[Path, Path]] = (),
@@ -115,7 +163,8 @@ def check_builds_for_files(
     """Checks that source files are in the GN and Bazel builds.
 
     Args:
-        extensions_to_check: which file suffixes to look for
+        bazel_extensions_to_check: which file suffixes to look for in Bazel
+        gn_extensions_to_check: which file suffixes to look for in GN
         files: the files that should be checked
         bazel_dirs: directories in which to run bazel query
         gn_dirs: (source_dir, output_dir) tuples with which to run gn desc
@@ -144,13 +193,18 @@ def check_builds_for_files(
 
     missing: Dict[str, List[Path]] = collections.defaultdict(list)
 
-    for path in (p for p in files if p.suffix in extensions_to_check):
-        if bazel_dirs and path.suffix != '.rst' and path not in bazel_builds:
-            # TODO(pwbug/176) Replace this workaround for fuzzers.
-            if 'fuzz' not in str(path):
-                missing['Bazel'].append(path)
-        if (gn_dirs or gn_build_files) and path not in gn_builds:
-            missing['GN'].append(path)
+    if bazel_dirs:
+        for path in (p for p in files
+                     if p.suffix in bazel_extensions_to_check):
+            if path not in bazel_builds:
+                # TODO(pwbug/176) Replace this workaround for fuzzers.
+                if 'fuzz' not in str(path):
+                    missing['Bazel'].append(path)
+
+    if gn_dirs or gn_build_files:
+        for path in (p for p in files if p.suffix in gn_extensions_to_check):
+            if path not in gn_builds:
+                missing['GN'].append(path)
 
     for builder, paths in missing.items():
         _LOG.warning('%s missing from the %s build:\n%s',

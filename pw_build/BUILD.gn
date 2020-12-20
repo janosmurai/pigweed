@@ -1,4 +1,4 @@
-# Copyright 2019 The Pigweed Authors
+# Copyright 2020 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -12,10 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_docgen/docs.gni")
+
+# IMPORTANT: The compilation flags in this file must be kept in sync with
+#            the CMake flags pw_build/CMakeLists.txt.
+
 config("colorize_output") {
   cflags = [
     # Colorize output. Ninja's Clang invocation disables color by default.
@@ -70,6 +73,10 @@ config("strict_warnings") {
   cflags = [
     "-Wall",
     "-Wextra",
+    "-Wimplicit-fallthrough",
+    "-Wcast-qual",
+    "-Wundef",
+    "-Wpointer-arith",
 
     # Make all warnings errors, except for the exemptions below.
     "-Werror",
@@ -83,7 +90,10 @@ config("strict_warnings") {
 # enable, but are enabled for upstream Pigweed for maximum project
 # compatibility.
 config("extra_strict_warnings") {
-  cflags = [ "-Wshadow" ]
+  cflags = [
+    "-Wshadow",
+    "-Wredundant-decls",
+  ]
 }
 
 config("cpp11") {
@@ -101,6 +111,17 @@ config("cpp17") {
     # Allow uses of the register keyword, which may appear in C headers.
     "-Wno-register",
   ]
+}
+
+# This empty target is used as the default value for module configurations.
+# Projects may set pw_build_DEFAULT_MODULE_CONFIG to a different GN target that
+# overrides modules' configuration options via macro definitions or a header
+# forcibly included with `-include`.
+group("empty") {
+}
+
+pool("pip_pool") {
+  depth = 1
 }
 
 pw_doc_group("docs") {

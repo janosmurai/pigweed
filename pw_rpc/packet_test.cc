@@ -15,6 +15,7 @@
 #include "pw_rpc/internal/packet.h"
 
 #include "gtest/gtest.h"
+#include "pw_bytes/array.h"
 #include "pw_protobuf/codegen.h"
 #include "pw_protobuf/wire_format.h"
 
@@ -23,81 +24,111 @@ namespace {
 
 using std::byte;
 
-constexpr byte kPayload[] = {byte(0x82), byte(0x02), byte(0xff), byte(0xff)};
+constexpr auto kPayload = bytes::Array<0x82, 0x02, 0xff, 0xff>();
 
-constexpr byte kEncoded[] = {
+constexpr auto kEncoded = bytes::Array<
     // Payload
-    byte{MakeKey(5, protobuf::WireType::kDelimited)},
-    byte{0x04},
-    byte{0x82},
-    byte{0x02},
-    byte{0xff},
-    byte{0xff},
+    MakeKey(5, protobuf::WireType::kDelimited),
+    0x04,
+    0x82,
+    0x02,
+    0xff,
+    0xff,
 
     // Packet type
-    byte{MakeKey(1, protobuf::WireType::kVarint)},
-    byte{0},  // RPC
+    MakeKey(1, protobuf::WireType::kVarint),
+    1,  // RESPONSE
 
     // Channel ID
-    byte{MakeKey(2, protobuf::WireType::kVarint)},
-    byte{1},
+    MakeKey(2, protobuf::WireType::kVarint),
+    1,
 
     // Service ID
-    byte{MakeKey(3, protobuf::WireType::kVarint)},
-    byte{42},
+    MakeKey(3, protobuf::WireType::kFixed32),
+    42,
+    0,
+    0,
+    0,
 
     // Method ID
-    byte{MakeKey(4, protobuf::WireType::kVarint)},
-    byte{100},
+    MakeKey(4, protobuf::WireType::kFixed32),
+    100,
+    0,
+    0,
+    0,
 
     // Status
-    byte{MakeKey(6, protobuf::WireType::kVarint)},
-    byte{0x00},
-};
+    MakeKey(6, protobuf::WireType::kVarint),
+    0x00>();
 
-constexpr size_t kReservedSize = 2 /* type */ + 2 /* channel */ +
-                                 2 /* service */ + 2 /* method */ +
-                                 2 /* payload key */ + 2 /* status */;
+// Test that a default-constructed packet sets its members to the default
+// protobuf values.
+static_assert(Packet().type() == PacketType{});
+static_assert(Packet().channel_id() == 0);
+static_assert(Packet().service_id() == 0);
+static_assert(Packet().method_id() == 0);
+static_assert(Packet().status() == static_cast<Status::Code>(0));
+static_assert(Packet().payload().empty());
 
 TEST(Packet, Encode) {
   byte buffer[64];
 
-  Packet packet(PacketType::RPC, 1, 42, 100, kPayload);
+  Packet packet(PacketType::RESPONSE, 1, 42, 100, kPayload);
 
-  auto sws = packet.Encode(buffer);
-  ASSERT_EQ(sizeof(kEncoded), sws.size());
-  EXPECT_EQ(std::memcmp(kEncoded, buffer, sizeof(kEncoded)), 0);
+  auto result = packet.Encode(buffer);
+  ASSERT_EQ(Status::Ok(), result.status());
+  ASSERT_EQ(kEncoded.size(), result.value().size());
+  EXPECT_EQ(std::memcmp(kEncoded.data(), buffer, kEncoded.size()), 0);
 }
 
-TEST(Packet, Decode) {
-  Packet packet = Packet::FromBuffer(kEncoded);
+TEST(Packet, Encode_BufferTooSmall) {
+  byte buffer[2];
 
-  EXPECT_EQ(PacketType::RPC, packet.type());
+  Packet packet(PacketType::RESPONSE, 1, 42, 100, kPayload);
+
+  auto result = packet.Encode(buffer);
+  EXPECT_EQ(Status::ResourceExhausted(), result.status());
+}
+
+TEST(Packet, Decode_ValidPacket) {
+  auto result = Packet::FromBuffer(kEncoded);
+  ASSERT_TRUE(result.ok());
+
+  auto& packet = result.value();
+  EXPECT_EQ(PacketType::RESPONSE, packet.type());
   EXPECT_EQ(1u, packet.channel_id());
   EXPECT_EQ(42u, packet.service_id());
   EXPECT_EQ(100u, packet.method_id());
   ASSERT_EQ(sizeof(kPayload), packet.payload().size());
-  EXPECT_EQ(0,
-            std::memcmp(packet.payload().data(), kPayload, sizeof(kPayload)));
+  EXPECT_EQ(
+      0,
+      std::memcmp(packet.payload().data(), kPayload.data(), kPayload.size()));
+}
+
+TEST(Packet, Decode_InvalidPacket) {
+  byte bad_data[] = {byte{0xFF}, byte{0x00}, byte{0x00}, byte{0xFF}};
+  EXPECT_EQ(Status::DataLoss(), Packet::FromBuffer(bad_data).status());
 }
 
 TEST(Packet, EncodeDecode) {
   constexpr byte payload[]{byte(0x00), byte(0x01), byte(0x02), byte(0x03)};
 
-  Packet packet = Packet(PacketType::RPC);
+  Packet packet;
   packet.set_channel_id(12);
   packet.set_service_id(0xdeadbeef);
   packet.set_method_id(0x03a82921);
   packet.set_payload(payload);
-  packet.set_status(Status::UNAVAILABLE);
+  packet.set_status(Status::Unavailable());
 
   byte buffer[128];
-  StatusWithSize sws = packet.Encode(buffer);
-  ASSERT_EQ(sws.status(), Status::OK);
+  Result result = packet.Encode(buffer);
+  ASSERT_EQ(result.status(), Status::Ok());
 
-  span<byte> packet_data(buffer, sws.size());
-  Packet decoded = Packet::FromBuffer(packet_data);
+  std::span<byte> packet_data(buffer, result.value().size());
+  auto decode_result = Packet::FromBuffer(packet_data);
+  ASSERT_TRUE(decode_result.ok());
 
+  auto& decoded = decode_result.value();
   EXPECT_EQ(decoded.type(), packet.type());
   EXPECT_EQ(decoded.channel_id(), packet.channel_id());
   EXPECT_EQ(decoded.service_id(), packet.service_id());
@@ -107,48 +138,22 @@ TEST(Packet, EncodeDecode) {
                         packet.payload().data(),
                         packet.payload().size()),
             0);
-  EXPECT_EQ(decoded.status(), Status::UNAVAILABLE);
+  EXPECT_EQ(decoded.status(), Status::Unavailable());
 }
 
-TEST(Packet, PayloadUsableSpace_EmptyBuffer) {
-  Packet packet(PacketType::RPC, 1, 42, 100, kPayload);
-  EXPECT_TRUE(packet.PayloadUsableSpace(span<byte>()).empty());
-}
-
-TEST(Packet, PayloadUsableSpace_TooSmall) {
-  Packet packet(PacketType::RPC, 1, 42, 100, kPayload);
-
-  byte buffer[10];
-  EXPECT_TRUE(packet.PayloadUsableSpace(buffer).empty());
-}
+constexpr size_t kReservedSize = 2 /* type */ + 2 /* channel */ +
+                                 5 /* service */ + 5 /* method */ +
+                                 2 /* payload key */ + 2 /* status */;
 
 TEST(Packet, PayloadUsableSpace_ExactFit) {
-  byte buffer[kReservedSize];
-  const span payload =
-      Packet(PacketType::RPC, 1, 42, 100).PayloadUsableSpace(buffer);
-
-  EXPECT_EQ(payload.size(), sizeof(buffer) - kReservedSize);
-  EXPECT_EQ(buffer + kReservedSize, payload.data());
-}
-
-TEST(Packet, PayloadUsableSpace_ExtraRoom) {
-  byte buffer[kReservedSize * 3];
-  const span payload =
-      Packet(PacketType::RPC, 1, 42, 100).PayloadUsableSpace(buffer);
-
-  EXPECT_EQ(payload.size(), sizeof(buffer) - kReservedSize);
-  EXPECT_EQ(buffer + kReservedSize, payload.data());
+  EXPECT_EQ(kReservedSize,
+            Packet(PacketType::RESPONSE, 1, 42, 100).MinEncodedSizeBytes());
 }
 
 TEST(Packet, PayloadUsableSpace_LargerVarints) {
-  byte buffer[kReservedSize * 3];
-  const span payload =
-      Packet(PacketType::RPC, 17000, 200, 200).PayloadUsableSpace(buffer);
-
-  constexpr size_t expected_size = kReservedSize + 2 + 1 + 1;
-
-  EXPECT_EQ(payload.size(), sizeof(buffer) - expected_size);
-  EXPECT_EQ(buffer + expected_size, payload.data());
+  EXPECT_EQ(
+      kReservedSize + 2 /* channel */,  // service and method are Fixed32
+      Packet(PacketType::RESPONSE, 17000, 200, 200).MinEncodedSizeBytes());
 }
 
 }  // namespace

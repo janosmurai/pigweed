@@ -134,13 +134,14 @@ TEST(Check, FloatComparison) {
   float x_float = 50.5;
   float y_float = 66.5;
 
-  PW_CHECK_FLOAT_LE(x_float, y_float);
-  PW_CHECK_FLOAT_LE(x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED);
-  PW_CHECK_FLOAT_LE(x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED_ARGS, z);
+  PW_CHECK_FLOAT_EXACT_LE(x_float, y_float);
+  PW_CHECK_FLOAT_EXACT_LE(x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED);
+  PW_CHECK_FLOAT_EXACT_LE(
+      x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED_ARGS, z);
 
-  PW_CHECK_FLOAT_GE(x_float, y_float);
-  PW_CHECK_FLOAT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN);
-  PW_CHECK_FLOAT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN_ARGS, z);
+  PW_CHECK_FLOAT_EXACT_GE(x_float, y_float);
+  PW_CHECK_FLOAT_EXACT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN);
+  PW_CHECK_FLOAT_EXACT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN_ARGS, z);
 }
 
 // Don't exhaustively test the DCHECKs but have a sampling of them.
@@ -150,7 +151,7 @@ TEST(DCheck, Sampling) {
   PW_DCHECK(5 == 10, "Message");
   PW_DCHECK(5 == 10, "Message: %d", 5);
   PW_DCHECK_INT_LE(5.4, 10.0);
-  PW_DCHECK_FLOAT_EQ(5.4, 10.0, "Message");
+  PW_DCHECK_FLOAT_EXACT_EQ(5.4, 10.0, "Message");
 }
 
 static int Add3(int a, int b, int c) { return a + b + c; }
@@ -202,7 +203,7 @@ pw::Status MakeStatus(pw::Status status) { return status; }
 
 TEST(Check, CheckOkMacrosCompile) {
   MAYBE_SKIP_TEST;
-  pw::Status status = pw::Status::UNKNOWN;
+  pw::Status status = pw::Status::Unknown();
 
   // Typical case with long names.
   PW_CHECK_OK(status);
@@ -215,10 +216,10 @@ TEST(Check, CheckOkMacrosCompile) {
   CHECK_OK(status, "msg: %d", 5);
 
   // Status from a literal.
-  PW_CHECK_OK(pw::Status::OK);
+  PW_CHECK_OK(pw::Status::Ok());
 
   // Status from a function.
-  PW_CHECK_OK(MakeStatus(pw::Status::OK));
+  PW_CHECK_OK(MakeStatus(pw::Status::Ok()));
 
   // Status from C enums.
   PW_CHECK_OK(PW_STATUS_OK);

@@ -3,13 +3,14 @@
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may
 # run arbitrary code.
+# TODO(pwbug/280) Change "whitelist" to "allowlist". (Blocked on pylint.)
 extension-pkg-whitelist=mypy
 
-# Add files or directories to the blacklist. They should be base names, not
+# Add files or directories to the blocklist. They should be base names, not
 # paths.
 ignore=CVS
 
-# Add files or directories matching the regex patterns to the blacklist. The
+# Add files or directories matching the regex patterns to the blocklist. The
 # regex matches against base names, not paths.
 ignore-patterns=
 
@@ -60,14 +61,16 @@ confidence=
 # --enable=similarities". If you want to run only the classes checker, but have
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
-disable=fixme,
-        subprocess-run-check
+disable=bad-continuation,  # Rely on yapf for formatting
+        fixme,
+        subprocess-run-check,
+        raise-missing-from,
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
 # multiple time (only on the command line, not in the configuration file where
 # it should appear only once). See also the "--disable" option for examples.
-enable=c-extension-no-member
+enable=c-extension-no-member,
 
 
 [REPORTS]
@@ -86,7 +89,7 @@ evaluation=10.0 - ((float(5 * error + warning + refactor + convention) / stateme
 # Set the output format. Available formats are text, parseable, colorized, json
 # and msvs (visual studio). You can also give a reporter class, e.g.
 # mypackage.mymodule.MyReporterClass.
-output-format=text
+output-format=colorized
 
 # Tells whether to display a full report or only the messages.
 reports=no
@@ -299,6 +302,7 @@ good-names=i,
            db,
            ex,
            fd,
+           id,
            ok,
            Run,
            T,
@@ -389,7 +393,7 @@ ignored-classes=optparse.Values,
 # (useful for modules/projects where namespaces are manipulated during runtime
 # and thus existing member attributes cannot be deduced by static analysis). It
 # supports qualified module names, as well as Unix pattern matching.
-ignored-modules=
+ignored-modules=*_pb2
 
 # Show a hint with possible names when a member name was not found. The aspect
 # of finding the hint is based on edit distance.
@@ -437,7 +441,7 @@ max-returns=10
 max-statements=100
 
 # Minimum number of public methods for a class (see R0903).
-min-public-methods=1
+min-public-methods=0
 
 
 [CLASSES]

@@ -1,8 +1,4 @@
-.. _chapter-pw-assert:
-
-.. default-domain:: cpp
-
-.. highlight:: cpp
+.. _module-pw_assert:
 
 =========
 pw_assert
@@ -11,26 +7,25 @@ pw_assert
 --------
 Overview
 --------
-Pigweed's assert module provides facilities for applications to check
-preconditions. The module is split into two components:
+Pigweed's assert module enables applications to check preconditions, triggering
+a crash if the condition is not met. Consistent use of asserts is one aspect of
+defensive programming that can lead to more reliable and less buggy code.
 
-1. The facade (this module) which is only a macro interface layer
-2. The backend, provided elsewhere, that implements the low level checks
+The assert API facilitates flexible crash handling through Pigweed's facade
+mechanism. The API is desigend to enable features like:
 
-All behaviour is controlled by the backend.
+- Optional ancillary printf-style messages along assertions
+- Capturing actual values of binary operator assertions like ``a < b``
+- Compatibility with pw_tokenizer for reduced binary code size
 
-The ``pw_assert`` public API provides three classes of macros:
+The ``pw_assert`` API provides three classes of macros:
 
-+-----------------------------------------+--------------------------------+
-| PW_CRASH(format, ...)                   | Trigger a crash with a message |
-+-----------------------------------------+--------------------------------+
-| PW_CHECK(condition[, format, ...])      | Assert a condition, optionally |
-|                                         | with a message                 |
-+-----------------------------------------+--------------------------------+
-| PW_CHECK_<type>_<cmp>(a, b[, fmt, ...]) | Assert that the expression     |
-|                                         | ``a <cmp> b`` is true,         |
-|                                         | optionally with a message.     |
-+-----------------------------------------+--------------------------------+
+- **PW_CRASH(format, ...)** - Trigger a crash with a message.
+- **PW_CHECK(condition[, format, ...])** - Assert a condition, optionally with
+  a message.
+- **PW_CHECK_<type>_<cmp>(a, b[, fmt, ...])** - Assert that the expression ``a
+  <cmp> b`` is true, optionally with a message.
+- **PW_ASSERT(condition)** - Header- and constexpr- assert.
 
 .. tip::
 
@@ -75,68 +70,41 @@ Example
     // The functions ItemCount() and GetStateStr() are never called.
     PW_DCHECK_INT_LE(ItemCount(), 100, "System state: %s", GetStateStr());
 
-Design discussion
------------------
-The Pigweed assert API was designed taking into account the needs of several
-past projects the team members were involved with. Based on those experiences,
-the following were key requirements for the API:
+.. tip::
 
-1. **C compatibility** - Since asserts are typically invoked from arbitrary
-   contexts, including from vendor or third party code, the assert system must
-   have a C-compatible API. Some API functions working only in C++ is
-   acceptable, as long as the key functions work in C.
-2. **Capturing both expressions and values** - Since asserts can trigger in
-   ways that are not repeatable, it is important to capture rich diagnostic
-   information to help identifying the root cause of the fault. For asserts,
-   this means including the failing expression text, and optionally also
-   capturing failing expression values. For example, instead of capturing an
-   error with the expression (``x < y``), capturing an error with the
-   expression and values(``x < y, with x = 10, y = 0``).
-3. **Tokenization compatible** - It's important that the assert expressions
-   support tokenization; both the expression itself (e.g. ``a < b``) and the
-   message attached to the expression. For example: ``PW_CHECK(ItWorks(), "Ruh
-   roh: %d", some_int)``.
-4. **Customizable assert handling** - Most products need to support custom
-   handling of asserts. In some cases, an assert might trigger printing out
-   details to a UART; in other cases, it might trigger saving a log entry to
-   flash. The assert system must support this customization.
+  Use ``PW_ASSERT`` from ``pw_assert/light.h`` for asserts in headers or
+  asserting in ``constexpr`` contexts.
 
-The combination of #1, #2, and #3 led to the structure of the API. In
-particular, the need to support tokenized asserts and the need to support
-capturing values led to the choice of having ``PW_CHECK_INT_LE(a, b)`` instead
-of ``PW_CHECK(a <= b)``. Needing to support tokenization is what drove the
-facade & backend arrangement, since the backend must provide the raw macros for
-asserting in that case, rather than terminating at a C-style API.
-
-Why isn't there a ``PW_CHECK_LE``? Why is the type (e.g. ``INT``) needed?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The problem with asserts like ``PW_CHECK_LE(a, b)`` instead of
-``PW_CHECK_INT_LE(a, b)`` or ``PW_CHECK_FLOAT_LE(a, b)`` is that to capture the
-arguments with the tokenizer, we need to know the types. Using the
-preprocessor, it is impossible to dispatch based on the types of ``a`` and
-``b``, so unfortunately having a separate macro for each of the types commonly
-asserted on is necessary.
-
-How should objects be asserted against or compared?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Unfortunatly, there is no native mechanism for this, and instead the way to
-assert object states or comparisons is with the normal ``PW_CHECK_*`` macros
-that operate on booleans, ints, and floats.
-
-This is due to the requirement of supporting C and also tokenization. It may be
-possible support rich object comparions by defining a convention for
-stringifying objects; however, this hasn't been added yet. Additionally, such a
-mechanism would not work well with tokenization. In particular, it would
-require runtime stringifying arguments and rendering them with ``%s``, which
-leads to binary bloat even with tokenization. So it is likely that a rich
-object assert API won't be added.
-
+Structure of assert modules
 ---------------------------
-Assert facade API reference
----------------------------
+The module is split into two components:
+
+1. The **facade** (this module) which is only a macro interface layer, and
+   performs the actual checks for the conditions.
+2. The **backend**, provided elsewhere, that handles the consequences of an
+   assert failing. Example backends include ``pw_assert_basic``, which prints a
+   useful message and either quits the application (on host) or hangs in a
+   while loop (on device). In the future, there will be a tokenized assert
+   backend. This is also where application or product specific crash handling
+   would go.
+
+.. blockdiag::
+
+  blockdiag {
+    default_fontsize = 16;
+    facade  [label = "facade"];
+    backend [label = "backend"];
+    facade -> backend
+  }
+
+See the Backend API section below for more details.
+
+----------
+Facade API
+----------
 
 The below functions describe the assert API functions that applications should
-invoke to assert.
+invoke to assert. These macros found in the ``pw_assert/assert.h`` header.
 
 .. cpp:function:: PW_CRASH(format, ...)
 
@@ -193,7 +161,8 @@ invoke to assert.
     +------------------------------------+-------------------------------------+
     | ``PW_CHECK(a_ptr <= b_ptr)``       | ``PW_CHECK_PTR_LE(a_ptr, b_ptr)``   |
     +------------------------------------+-------------------------------------+
-    | ``PW_CHECK(Temp() <= 10.0)``       | ``PW_CHECK_FLOAT_LE(Temp(), 10.0)`` |
+    | ``PW_CHECK(Temp() <= 10.0)``       | ``PW_CHECK_FLOAT_EXACT_LE(``        |
+    |                                    | ``    Temp(), 10.0)``               |
     +------------------------------------+-------------------------------------+
     | ``PW_CHECK(Foo() == Status::OK)``  | ``PW_CHECK_OK(Foo())``              |
     +------------------------------------+-------------------------------------+
@@ -242,118 +211,156 @@ invoke to assert.
 
   .. code-block:: cpp
 
-    PW_CHECK_FLOAT_GE(BatteryVoltage(), 3.2, "System state=%s", SysState());
+    PW_CHECK_FLOAT_EXACT_GE(BatteryVoltage(), 3.2,
+                            "System state=%s", SysState());
 
   Below is the full list of binary comparison assert macros, along with the
   type specifier. The specifier is irrelevant to application authors but is
   needed for backend implementers.
 
-  +-------------------+--------------+-----------+-----------------------+
-  | Macro             | a, b type    | condition | a, b format specifier |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_INT_LE   | int          | a <= b    | %d                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_INT_LT   | int          | a <  b    | %d                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_INT_GE   | int          | a >= b    | %d                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_INT_GT   | int          | a >  b    | %d                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_INT_EQ   | int          | a == b    | %d                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_INT_NE   | int          | a != b    | %d                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_UINT_LE  | unsigned int | a <= b    | %u                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_UINT_LT  | unsigned int | a <  b    | %u                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_UINT_GE  | unsigned int | a >= b    | %u                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_UINT_GT  | unsigned int | a >  b    | %u                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_UINT_EQ  | unsigned int | a == b    | %u                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_UINT_NE  | unsigned int | a != b    | %u                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_PTR_LE   | void*        | a <= b    | %p                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_PTR_LT   | void*        | a <  b    | %p                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_PTR_GE   | void*        | a >= b    | %p                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_PTR_GT   | void*        | a >  b    | %p                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_PTR_EQ   | void*        | a == b    | %p                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_PTR_NE   | void*        | a != b    | %p                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_FLOAT_LE | float        | a <= b    | %f                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_FLOAT_LT | float        | a <  b    | %f                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_FLOAT_GE | float        | a >= b    | %f                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_FLOAT_GT | float        | a >  b    | %f                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_FLOAT_EQ | float        | a == b    | %f                    |
-  +-------------------+--------------+-----------+-----------------------+
-  | PW_CHECK_FLOAT_NE | float        | a != b    | %f                    |
-  +-------------------+--------------+-----------+-----------------------+
+  +-------------------------+--------------+-----------+-----------------------+
+  | Macro                   | a, b type    | condition | a, b format specifier |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_INT_LE         | int          | a <= b    | %d                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_INT_LT         | int          | a <  b    | %d                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_INT_GE         | int          | a >= b    | %d                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_INT_GT         | int          | a >  b    | %d                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_INT_EQ         | int          | a == b    | %d                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_INT_NE         | int          | a != b    | %d                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_UINT_LE        | unsigned int | a <= b    | %u                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_UINT_LT        | unsigned int | a <  b    | %u                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_UINT_GE        | unsigned int | a >= b    | %u                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_UINT_GT        | unsigned int | a >  b    | %u                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_UINT_EQ        | unsigned int | a == b    | %u                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_UINT_NE        | unsigned int | a != b    | %u                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_PTR_LE         | void*        | a <= b    | %p                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_PTR_LT         | void*        | a <  b    | %p                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_PTR_GE         | void*        | a >= b    | %p                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_PTR_GT         | void*        | a >  b    | %p                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_PTR_EQ         | void*        | a == b    | %p                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_PTR_NE         | void*        | a != b    | %p                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_FLOAT_EXACT_LE | float        | a <= b    | %f                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_FLOAT_EXACT_LT | float        | a <  b    | %f                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_FLOAT_EXACT_GE | float        | a >= b    | %f                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_FLOAT_EXACT_GT | float        | a >  b    | %f                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_FLOAT_EXACT_EQ | float        | a == b    | %f                    |
+  +-------------------------+--------------+-----------+-----------------------+
+  | PW_CHECK_FLOAT_EXACT_NE | float        | a != b    | %f                    |
+  +-------------------------+--------------+-----------+-----------------------+
 
   The above ``CHECK_*_*()`` are also available in DCHECK variants, which will
   only evaluate their arguments and trigger if the ``NDEBUG`` macro is defined.
 
-  +--------------------+--------------+-----------+-----------------------+
-  | Macro              | a, b type    | condition | a, b format specifier |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_INT_LE   | int          | a <= b    | %d                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_INT_LT   | int          | a <  b    | %d                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_INT_GE   | int          | a >= b    | %d                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_INT_GT   | int          | a >  b    | %d                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_INT_EQ   | int          | a == b    | %d                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_INT_NE   | int          | a != b    | %d                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_UINT_LE  | unsigned int | a <= b    | %u                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_UINT_LT  | unsigned int | a <  b    | %u                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_UINT_GE  | unsigned int | a >= b    | %u                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_UINT_GT  | unsigned int | a >  b    | %u                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_UINT_EQ  | unsigned int | a == b    | %u                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_UINT_NE  | unsigned int | a != b    | %u                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_PTR_LE   | void*        | a <= b    | %p                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_PTR_LT   | void*        | a <  b    | %p                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_PTR_GE   | void*        | a >= b    | %p                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_PTR_GT   | void*        | a >  b    | %p                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_PTR_EQ   | void*        | a == b    | %p                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_PTR_NE   | void*        | a != b    | %p                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_FLOAT_LE | float        | a <= b    | %f                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_FLOAT_LT | float        | a <  b    | %f                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_FLOAT_GE | float        | a >= b    | %f                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_FLOAT_GT | float        | a >  b    | %f                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_FLOAT_EQ | float        | a == b    | %f                    |
-  +--------------------+--------------+-----------+-----------------------+
-  | PW_DCHECK_FLOAT_NE | float        | a != b    | %f                    |
-  +--------------------+--------------+-----------+-----------------------+
+  +--------------------------+--------------+-----------+----------------------+
+  | Macro                    | a, b type    | condition | a, b format          |
+  |                          |              |           | specifier            |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_INT_LE         | int          | a <= b    | %d                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_INT_LT         | int          | a <  b    | %d                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_INT_GE         | int          | a >= b    | %d                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_INT_GT         | int          | a >  b    | %d                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_INT_EQ         | int          | a == b    | %d                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_INT_NE         | int          | a != b    | %d                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_UINT_LE        | unsigned int | a <= b    | %u                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_UINT_LT        | unsigned int | a <  b    | %u                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_UINT_GE        | unsigned int | a >= b    | %u                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_UINT_GT        | unsigned int | a >  b    | %u                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_UINT_EQ        | unsigned int | a == b    | %u                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_UINT_NE        | unsigned int | a != b    | %u                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_PTR_LE         | void*        | a <= b    | %p                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_PTR_LT         | void*        | a <  b    | %p                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_PTR_GE         | void*        | a >= b    | %p                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_PTR_GT         | void*        | a >  b    | %p                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_PTR_EQ         | void*        | a == b    | %p                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_PTR_NE         | void*        | a != b    | %p                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_FLOAT_EXACT_LE | float        | a <= b    | %f                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_FLOAT_EXACT_LT | float        | a <  b    | %f                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_FLOAT_EXACT_GE | float        | a >= b    | %f                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_FLOAT_EXACT_GT | float        | a >  b    | %f                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_FLOAT_EXACT_EQ | float        | a == b    | %f                   |
+  +--------------------------+--------------+-----------+----------------------+
+  | PW_DCHECK_FLOAT_EXACT_NE | float        | a != b    | %f                   |
+  +--------------------------+--------------+-----------+----------------------+
+
+.. attention::
+
+  For float, proper comparator checks which take floating point
+  precision and ergo error accumulation into account are not provided on
+  purpose as this comes with some complexity and requires application
+  specific tolerances in terms of Units of Least Precision (ULP). Instead,
+  we recommend developers carefully consider how floating point precision and
+  error impact the data they are bounding and whether checks are appropriate.
+
+.. cpp:function:: PW_CHECK_FLOAT_NEAR(a, b, abs_tolerance)
+.. cpp:function:: PW_CHECK_FLOAT_NEAR(a, b, abs_tolerance, format, ...)
+.. cpp:function:: PW_DCHECK_FLOAT_NEAR(a, b, abs_tolerance)
+.. cpp:function:: PW_DCHECK_FLOAT_NEAR(a, b, abs_tolerance, format, ...)
+
+  Asserts that ``(a >= b - abs_tolerance) && (a <= b + abs_tolerance)`` is true,
+  where ``a``, ``b``, and ``abs_tolerance`` are converted to ``float``.
+
+  .. note::
+    This also asserts that ``abs_tolerance >= 0``.
+
+  The ``DCHECK`` variants only run if ``NDEBUG`` is defined; otherwise, the
+  entire statement is removed (and the expression not evaluated).
+
+  Example, with no message:
+
+  .. code-block:: cpp
+
+    PW_CHECK_FLOAT_NEAR(cos(0.0f), 1, 0.001);
+
+  Example, with an included message and arguments:
+
+  .. code-block:: cpp
+
+    PW_CHECK_FLOAT_NEAR(FirstOperation(), RedundantOperation(), 0.1,
+                        "System state=%s", SysState());
 
 .. cpp:function:: PW_CHECK_OK(status)
 .. cpp:function:: PW_CHECK_OK(status, format, ...)
@@ -386,9 +393,90 @@ invoke to assert.
     code; for example ``status == RESOURCE_EXHAUSTED`` instead of ``status ==
     5``.
 
-----------------------------
-Assert backend API reference
-----------------------------
+---------
+Light API
+---------
+The normal ``PW_CHECK_*`` and ``PW_DCHECK_*`` family of macros are intended to
+provide rich debug information, like the file, line number, value of operands
+in boolean comparisons, and more. However, this comes at a cost: these macros
+depend directly on the backend headers, and may perform complicated call-site
+transformations like tokenization.
+
+There are several issues with the normal ``PW_CHECK_*`` suite of macros:
+
+1. ``PW_CHECK_*`` in headers can cause ODR violations in the case of tokenized
+   asserts, due to differing module choices.
+2. ``PW_CHECK_*`` is not constexpr-safe.
+3. ``PW_CHECK_*`` can cause code bloat with some backends; this is the tradeoff
+   to get rich assert information.
+4. ``PW_CHECK_*`` can trigger circular dependencies when asserts are used from
+   low-level contexts, like in ``<span>``.
+
+**Light asserts** solve all of the above three problems: No risk of ODR
+violations, are constexpr safe, and have a tiny call site footprint; and there
+is no header dependency on the backend preventing circular include issues.
+However, there are **no format messages, no captured line number, no captured
+file, no captured expression, or anything other than a binary indication of
+failure**.
+
+Example
+-------
+
+.. code-block:: cpp
+
+  // This example demonstrates asserting in a header.
+
+  #include "pw_assert/light.h"
+
+  class InlinedSubsystem {
+   public:
+    void DoSomething() {
+      // GOOD: No problem; PW_ASSERT is fine to inline and place in a header.
+      PW_ASSERT(IsEnabled());
+    }
+    void DoSomethingElse() {
+      // BAD: Generally avoid using PW_DCHECK() or PW_CHECK in headers. If you
+      // want rich asserts or logs, move the function into the .cc file, and
+      // then use PW_CHECK there.
+      PW_DCHECK(IsEnabled());  // DON'T DO THIS
+    }
+  };
+
+Light API reference
+-------------------
+.. cpp:function:: PW_ASSERT(condition)
+
+  A header- and constexpr-safe version of ``PW_CHECK()``.
+
+  If the given condition is false, crash the system. Otherwise, do nothing.
+  The condition is guaranteed to be evaluated. This assert implementation is
+  guaranteed to be constexpr-safe.
+
+.. cpp:function:: PW_DASSERT(condition)
+
+  A header- and constexpr-safe version of ``PW_DCHECK()``.
+
+  Same as ``PW_ASSERT()``, except that if ``PW_ASSERT_ENABLE_DEBUG == 1``, the
+  assert is disabled and condition is not evaluated.
+
+.. attention::
+
+  Unlike the ``PW_CHECK_*()`` suite of macros, ``PW_ASSERT()`` and
+  ``PW_DASSERT()`` capture no rich information like line numbers, the file,
+  expression arguments, or the stringified expression. Use these macros **only
+  when absolutely necessary**--in headers, constexr contexts, or in rare cases
+  where the call site overhead of a full PW_CHECK must be avoided.
+
+  Use ``PW_CHECK_*()`` whenever possible.
+
+Light API backend
+-----------------
+The light API ultimately calls the C function ``pw_assert_HandleFailure()``,
+which must be provided by the assert backend.
+
+-----------
+Backend API
+-----------
 
 The backend controls what to do in the case of an assertion failure. In the
 most basic cases, the backend could display the assertion failure on something
@@ -396,7 +484,15 @@ like sys_io and halt in a while loop waiting for a debugger. In other cases,
 the backend could store crash details like the current thread's stack to flash.
 
 This facade module (``pw_assert``) does not provide a backend. See
-:ref:`chapter-pw-assert-basic` for a basic implementation.
+:ref:`module-pw_assert_basic` for a basic implementation.
+
+.. attention::
+
+  The facade macros (``PW_CRASH`` and related) are expected to behave like they
+  have the ``[[ noreturn ]]`` attribute set. This implies that the backend
+  handler functions, ``PW_HANDLE_*`` defined by the backend, must not return.
+
+  In other words, the device must reboot.
 
 The backend must provide the header
 
@@ -449,18 +545,171 @@ and that header must define the following macros:
 
   .. tip::
 
-    See :ref:`chapter-pw-assert-basic` for one way to combine these arguments
+    See :ref:`module-pw_assert_basic` for one way to combine these arguments
     into a meaningful error message.
 
-.. attention::
+Additionally, the backend must provide a link-time function for the light
+assert handler. This does not need to appear in the backend header, but instead
+is in a ``.cc`` file.
 
-  The facade macros (``PW_CRASH`` and related) are expected to behave like they
-  have the ``[[ noreturn ]]`` attribute set. This implies that the backend
-  handler functions, ``PW_HANDLE_*`` defined by the backend, must not return.
+.. cpp:function:: pw_assert_HandleFailure()
 
-  In other words, the device must reboot.
+  Handle a low-level crash. This crash entry happens through
+  ``pw_assert/light.h``. In this crash handler, there is no access to line,
+  file, expression, or other rich assert information. Backends should do
+  something reasonable in this case; typically, capturing the stack is useful.
+
+--------------------------
+Frequently asked questions
+--------------------------
+
+When should DCHECK_* be used instead of CHECK_* and vice versa?
+---------------------------------------------------------------
+There is no hard and fast rule for when to use one or the other.
+
+In theory, ``DCHECK_*`` macros should never be used and all the asserts should
+remain active in production. In practice, **assert statements come at a binary
+size and runtime cost**, even when using extensions like a tokenized assert
+backend that strips the stringified assert expression from the binary. Each
+assert is **at least a branch with a function call**; depending on the assert
+backend, that function call may take several arguments (like the message, the
+file line number, the module, etc). These function calls can take 10-20 bytes
+or more of ROM each. Thus, there is a balance to be struct between ``DCHECK_*``
+and ``CHECK_*``.
+
+Pigweed uses these conventions to decide between ``CHECK_*`` and ``DCHECK_*``:
+
+- **Prefer to use CHECK_* at public API boundaries** of modules, where an
+  invalid value is a clear programmer bug. In certain cases use ``DCHECK_*`` to
+  keep binary size small when in production; for example, in modules with a
+  large public API surface, or modules with many inlined functions in headers.
+- **Avoid using CHECK_* macros in headers.** It is still OK to use ``CHECK_*``
+  macros in headers, but carefully consider the cost, since inlined use of the
+  ``CHECK_*`` macros in headers will expand to the full assert cost for every
+  translation unit that includes the header and calls the function with the
+  ``CHECK_*`` instance. ``DCHECK_*`` macros are are better, but even they come
+  at a cost, since it is preferable to be able to compile a binary in debug
+  mode for as long as possible on the road to production.
+- **Prefer to use DCHECK_* variants for internal asserts** that attempt to
+  catch module-author level programming errors. For example, use DCHECKs to
+  verify internal function preconditions, or other invariants that should
+  always be true but will likely never fire in production. In some cases using
+  ``CHECK_*`` macros for internal consistency checking can make sense, if the
+  runtime cost is low and there are only a couple of instances.
+
+.. tip::
+
+  **Do not return error status codes for obvious API misuse**
+
+  Returning an error code may **mask the earliest sign of a bug** because
+  notifying the developer of the problem depends on correct propagation of the
+  error to upper levels of the system. Instead, prefer to use the ``CHECK_*``
+  or ``DCHECK_*`` macros to ensure a prompt termination and warning to the
+  developer.
+
+  **Error status codes should be reserved for system misbehaviour or expected
+  exceptional cases**, like a sensor is not yet ready, or a storage subsystem
+  is full when writing. Doing ``CHECK_*`` assertions in those cases would be a
+  mistake; so use error codes in those cases instead.
+
+How should objects be asserted against or compared?
+---------------------------------------------------
+Unfortunatly, there is no native mechanism for this, and instead the way to
+assert object states or comparisons is with the normal ``PW_CHECK_*`` macros
+that operate on booleans, ints, and floats.
+
+This is due to the requirement of supporting C and also tokenization. It may be
+possible support rich object comparions by defining a convention for
+stringifying objects; however, this hasn't been added yet. Additionally, such a
+mechanism would not work well with tokenization. In particular, it would
+require runtime stringifying arguments and rendering them with ``%s``, which
+leads to binary bloat even with tokenization. So it is likely that a rich
+object assert API won't be added.
+
+Why was the assert facade designed this way?
+--------------------------------------------
+The Pigweed assert API was designed taking into account the needs of several
+past projects the team members were involved with. Based on those experiences,
+the following were key requirements for the API:
+
+1. **C compatibility** - Since asserts are typically invoked from arbitrary
+   contexts, including from vendor or third party code, the assert system must
+   have a C-compatible API. Some API functions working only in C++ is
+   acceptable, as long as the key functions work in C.
+2. **Capturing both expressions and values** - Since asserts can trigger in
+   ways that are not repeatable, it is important to capture rich diagnostic
+   information to help identifying the root cause of the fault. For asserts,
+   this means including the failing expression text, and optionally also
+   capturing failing expression values. For example, instead of capturing an
+   error with the expression (``x < y``), capturing an error with the
+   expression and values(``x < y, with x = 10, y = 0``).
+3. **Tokenization compatible** - It's important that the assert expressions
+   support tokenization; both the expression itself (e.g. ``a < b``) and the
+   message attached to the expression. For example: ``PW_CHECK(ItWorks(), "Ruh
+   roh: %d", some_int)``.
+4. **Customizable assert handling** - Most products need to support custom
+   handling of asserts. In some cases, an assert might trigger printing out
+   details to a UART; in other cases, it might trigger saving a log entry to
+   flash. The assert system must support this customization.
+
+The combination of #1, #2, and #3 led to the structure of the API. In
+particular, the need to support tokenized asserts and the need to support
+capturing values led to the choice of having ``PW_CHECK_INT_LE(a, b)`` instead
+of ``PW_CHECK(a <= b)``. Needing to support tokenization is what drove the
+facade & backend arrangement, since the backend must provide the raw macros for
+asserting in that case, rather than terminating at a C-style API.
+
+Why isn't there a ``PW_CHECK_LE``? Why is the type (e.g. ``INT``) needed?
+-------------------------------------------------------------------------
+The problem with asserts like ``PW_CHECK_LE(a, b)`` instead of
+``PW_CHECK_INT_LE(a, b)`` or ``PW_CHECK_FLOAT_EXACT_LE(a, b)`` is that to
+capture the arguments with the tokenizer, we need to know the types. Using the
+preprocessor, it is impossible to dispatch based on the types of ``a`` and
+``b``, so unfortunately having a separate macro for each of the types commonly
+asserted on is necessary.
 
 -------------
 Compatibility
 -------------
-The facade is compatible with C and C++.
+The facade is compatible with both C and C++.
+
+----------------
+Roadmap & Status
+----------------
+The Pigweed assert subsystem consiststs of several modules that work in
+coordination. This module is the facade (API), then a number of backends are
+available to handle assert failures. Products can also define their own
+backends. In some cases, the backends will have backends (like
+``pw_log_tokenized``).
+
+Below is a brief summary of what modules are ready for use:
+
+Available assert backends
+-------------------------
+- ``pw_assert`` - **Stable** - The assert facade (this module). This module is
+  stable, and in production use. The documentation is comprehensive and covers
+  the functionality. There are (a) tests for the facade macro processing logic,
+  using a fake assert backend; and (b) compile tests to verify that the
+  selected backend compiles with all supported assert constructions and types.
+- ``pw_assert_basic`` - **Stable** - The assert basic module is a simple assert
+  handler that displays the failed assert line and the values of captured
+  arguments. Output is directed to ``pw_sys_io``. This module is a great
+  ready-to-roll module when bringing up a system, but is likely not the best
+  choice for production.
+- ``pw_assert_log`` - **Stable** - This assert backend redirects to logging,
+  but with a logging flag set that indicates an assert failure. This is our
+  advised approach to get **tokenized asserts**--by using tokenized logging,
+  then using the ``pw_assert_log`` backend.
+
+Note: If one desires a null assert module (where asserts are removed), use
+``pw_assert_log`` in combination with ``pw_log_null``. This will direct asserts
+to logs, then the logs are removed due to the null backend.
+
+Missing functionality
+---------------------
+- **Stack traces** - Pigweed doesn't have a reliable stack walker, which makes
+  displaying a stack trace on crash harder. We plan to add this eventually.
+- **Snapshot integration** - Pigweed doesn't yet have a rich system state
+  capture system that can capture state like number of tasks, available memory,
+  and so on. Snapshot facilities are the obvious ones to run inside an assert
+  handler. It'll happen someday.

@@ -14,52 +14,61 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
+#include <tuple>
 
 #include "pw_containers/intrusive_list.h"
 #include "pw_rpc/channel.h"
-#include "pw_rpc/internal/service.h"
+#include "pw_rpc/internal/base_server_writer.h"
+#include "pw_rpc/internal/channel.h"
+#include "pw_rpc/internal/method.h"
+#include "pw_rpc/service.h"
+#include "pw_status/status.h"
 
 namespace pw::rpc {
-namespace internal {
-
-class Method;
-class Packet;
-
-}  // namespace internal
 
 class Server {
  public:
-  constexpr Server(span<Channel> channels) : channels_(channels) {}
+  constexpr Server(std::span<Channel> channels)
+      : channels_(static_cast<internal::Channel*>(channels.data()),
+                  channels.size()) {}
 
-  Server(const Server& other) = delete;
-  Server& operator=(const Server& other) = delete;
+  ~Server();
 
   // Registers a service with the server. This should not be called directly
-  // with an internal::Service; instead, use a generated class which inherits
-  // from it.
-  void RegisterService(internal::Service& service) {
-    services_.push_front(service);
-  }
+  // with a Service; instead, use a generated class which inherits from it.
+  void RegisterService(Service& service) { services_.push_front(service); }
 
-  void ProcessPacket(span<const std::byte> packet, ChannelOutput& interface);
+  // Processes an RPC packet. The packet may contain an RPC request or a control
+  // packet, the result of which is processed in this function. Returns whether
+  // the packet was able to be processed:
+  //
+  //   OK - The packet was processed by the server.
+  //   DATA_LOSS - Failed to decode the packet.
+  //   INVALID_ARGUMENT - The packet is intended for a client, not a server.
+  //
+  Status ProcessPacket(std::span<const std::byte> packet,
+                       ChannelOutput& interface);
 
   constexpr size_t channel_count() const { return channels_.size(); }
 
+ protected:
+  IntrusiveList<internal::BaseServerWriter>& writers() { return writers_; }
+
  private:
-  void InvokeMethod(const internal::Packet& request,
-                    Channel& channel,
-                    internal::Packet& response,
-                    span<std::byte> buffer);
+  std::tuple<Service*, const internal::Method*> FindMethod(
+      const internal::Packet& packet);
 
-  void SendResponse(const Channel& output,
-                    const internal::Packet& response,
-                    span<std::byte> response_buffer) const;
+  void HandleCancelPacket(const internal::Packet& request,
+                          internal::Channel& channel);
+  void HandleClientError(const internal::Packet& packet);
 
-  Channel* FindChannel(uint32_t id) const;
-  Channel* AssignChannel(uint32_t id, ChannelOutput& interface);
+  internal::Channel* FindChannel(uint32_t id) const;
+  internal::Channel* AssignChannel(uint32_t id, ChannelOutput& interface);
 
-  span<Channel> channels_;
-  IntrusiveList<internal::Service> services_;
+  std::span<internal::Channel> channels_;
+  IntrusiveList<Service> services_;
+  IntrusiveList<internal::BaseServerWriter> writers_;
 };
 
 }  // namespace pw::rpc

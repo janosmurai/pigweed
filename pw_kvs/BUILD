@@ -38,7 +38,7 @@ pw_cc_library(
         "public/pw_kvs/internal/key_descriptor.h",
         "public/pw_kvs/internal/sectors.h",
         "public/pw_kvs/internal/span_traits.h",
-        "pw_kvs_private/macros.h",
+        "pw_kvs_private/config.h",
         "sectors.cc",
     ],
     hdrs = [
@@ -89,6 +89,65 @@ pw_cc_library(
         "//pw_log:facade",
         "//pw_span",
         "//pw_status",
+    ],
+)
+
+pw_cc_library(
+    name = "fake_flash_small_partition",
+    srcs = [
+        "fake_flash_test_partition.cc",
+    ],
+    hdrs = [
+        "public/pw_kvs/flash_test_partition.h",
+    ],
+    deps = [
+        ":fake_flash",
+        ":pw_kvs",
+    ],
+)
+
+pw_cc_library(
+    name = "fake_flash_64_aligned_partition",
+    srcs = [
+        "fake_flash_test_partition.cc",
+    ],
+    hdrs = [
+        "public/pw_kvs/flash_test_partition.h",
+    ],
+    defines = ["PW_FLASH_TEST_ALIGNMENT=64"],
+    deps = [
+        ":fake_flash",
+        ":pw_kvs",
+    ],
+)
+
+pw_cc_library(
+    name = "fake_flash_256_aligned_partition",
+    srcs = [
+        "fake_flash_test_partition.cc",
+    ],
+    hdrs = [
+        "public/pw_kvs/flash_test_partition.h",
+    ],
+    defines = ["PW_FLASH_TEST_ALIGNMENT=256"],
+    deps = [
+        ":fake_flash",
+        ":pw_kvs",
+    ],
+)
+
+pw_cc_library(
+    name = "fake_flash_test_key_value_store",
+    srcs = [
+        "fake_flash_test_key_value_store.cc",
+    ],
+    hdrs = [
+        "public/pw_kvs/test_key_value_store.h",
+    ],
+    deps = [
+        ":crc16",
+        ":fake_flash",
+        ":pw_kvs",
     ],
 )
 
@@ -145,6 +204,12 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "converts_to_span_test",
+    srcs = ["converts_to_span_test.cc"],
+    deps = [":pw_kvs"],
+)
+
+pw_cc_test(
     name = "entry_test",
     srcs = [
         "entry_test.cc",
@@ -170,6 +235,42 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "flash_partition_small_test",
+    srcs = ["flash_partition_test.cc"],
+    defines = ["PW_FLASH_TEST_ITERATIONS=100"],
+    deps = [
+        ":fake_flash_small_partition",
+        ":pw_kvs",
+        "//pw_log:backend",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "flash_partition_64_alignment_test",
+    srcs = ["flash_partition_test.cc"],
+    defines = ["PW_FLASH_TEST_ITERATIONS=100"],
+    deps = [
+        ":fake_flash_64_aligned_partition",
+        ":pw_kvs",
+        "//pw_log:backend",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "flash_partition_256_alignment_test",
+    srcs = ["flash_partition_test.cc"],
+    defines = ["PW_FLASH_TEST_ITERATIONS=100"],
+    deps = [
+        ":fake_flash_256_aligned_partition",
+        ":pw_kvs",
+        "//pw_log:backend",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
     name = "key_value_store_test",
     srcs = ["key_value_store_test.cc"],
     deps = [
@@ -182,6 +283,73 @@ pw_cc_test(
         "//pw_span",
         "//pw_status",
         "//pw_string",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "key_value_store_small_flash_test",
+    srcs = ["key_value_store_initialized_test.cc"],
+    deps = [
+        ":crc16",
+        ":fake_flash_small_partition",
+        ":pw_kvs",
+        ":test_utils",
+        "//pw_checksum",
+        "//pw_log:backend",
+        "//pw_log:facade",
+        "//pw_span",
+        "//pw_status",
+        "//pw_string",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "key_value_store_64_alignment_flash_test",
+    srcs = ["key_value_store_initialized_test.cc"],
+    deps = [
+        ":crc16",
+        ":fake_flash_64_aligned_partition",
+        ":pw_kvs",
+        ":test_utils",
+        "//pw_checksum",
+        "//pw_log:backend",
+        "//pw_log:facade",
+        "//pw_span",
+        "//pw_status",
+        "//pw_string",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "key_value_store_256_alignment_flash_test",
+    srcs = ["key_value_store_initialized_test.cc"],
+    deps = [
+        ":crc16",
+        ":fake_flash_256_aligned_partition",
+        ":pw_kvs",
+        ":test_utils",
+        "//pw_checksum",
+        "//pw_log:backend",
+        "//pw_log:facade",
+        "//pw_span",
+        "//pw_status",
+        "//pw_string",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "fake_flash_test_key_value_store_test",
+    srcs = ["test_key_value_store_test.cc"],
+    deps = [
+        ":crc16",
+        ":fake_flash_test_key_value_store",
+        ":pw_kvs",
+        "//pw_log:backend",
+        "//pw_status",
         "//pw_unit_test",
     ],
 )
@@ -253,22 +421,4 @@ pw_cc_test(
         "//pw_log:backend",
         "//pw_unit_test",
     ],
-)
-
-# TODO: This binary is not building due to a linker error. The error does not occur in GN Builds.
-# A filegroup is used below so that the file is included in the Bazel build.
-# cc_binary(
-#     name = "debug_cli",
-#     srcs = ["debug_cli.cc"],
-#     copts = ["-std=c++17"],
-#     deps = [
-#         ":crc16",
-#         ":pw_kvs",
-#         ":test_utils",
-#     ],
-# )
-
-filegroup(
-    name = "debug_cli",
-    srcs = ["debug_cli.cc"],
 )

@@ -1,8 +1,8 @@
 [
   {
-    "path": "gn/gn/${os}-${arch=amd64}",
+    "path": "gn/gn/${os}-${arch=amd64,arm64}",
     "tags": [
-      "git_revision:200492a501c6c78ebb9aef45e6f231ddfadfe231"
+      "git_revision:4e260f1dc17864cdedc31bec1ff658404a9d703e"
     ]
   },
   {
@@ -46,12 +46,12 @@
     "_comment": "TODO(pwbug/70) Put clang in cipd for Windows.",
     "path": "fuchsia/third_party/clang/${os=linux,mac}-${arch}",
     "tags": [
-      "git_revision:8e058feae0b0d07cd86257f0aa3154acfa887fe0"
+      "git_revision:8af160b0b8ca8102b9490a287244af75727872f5"
     ]
   },
   {
     "_comment": "When bumping the minor version (e.g., to 3.9.x) also update env_setup/virtualenv/init.py to check for the new version.",
-    "path": "infra/3pp/tools/cpython3/${platform}",
+    "path": "infra/3pp/tools/cpython3/${os}-${arch}",
     "tags": [
       "version:3.8.2.chromium.10"
     ]
@@ -91,25 +91,33 @@
   {
     "path": "pigweed/host_tools/${os}-${arch=amd64}",
     "tags": [
-      "git_revision:9fc78b8562db2e71151a4880adb583a923ea94a2"
+      "git_revision:09def8c0105cd4f6de6de3c52fccf31aabd2c679"
     ]
   },
   {
     "path": "infra/goma/client/${os}-${arch=amd64}",
     "tags": [
-      "git_revision:80401d72a6476494ab19ac9bed48a6cccbd6f8e0"
+      "git_revision:9c15a8cecf525a4fbc7d4a11685e7dbd61cdc830"
     ]
   },
   {
-    "path": "fuchsia/third_party/qemu/${os=linux,mac}-${arch=amd64}",
+    "path": "fuchsia/third_party/qemu/${os=linux,mac}-${arch}",
     "tags": [
-      "git_revision:487fc6fd6e173571c9842a45dd8071a23f24aaf3-2"
+      "git_revision:841f14e74f5af7886cf49cfcd4fed264911ae58e"
     ]
   },
   {
-    "path": "pigweed/third_party/kythe",
+    "path": "fuchsia/third_party/kythe",
+    "subdir": "kythe",
     "tags": [
-      "version:0.0.43"
+      "version:1.0.1"
+    ]
+  },
+  {
+    "path": "fuchsia/third_party/kythe-libs/${os=linux}-${arch=amd64}",
+    "subdir": "kythe",
+    "tags": [
+      "version:2020-08-05"
     ]
   }
 ]

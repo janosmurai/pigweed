@@ -24,41 +24,6 @@ namespace pw {
 namespace tokenizer {
 namespace {
 
-// Store metadata about this compilation's string tokenization in the ELF.
-//
-// The tokenizer metadata will not go into the on-device executable binary code.
-// This metadata will be present in the ELF file's .pw_tokenizer_info section,
-// from which the host-side tooling (Python, Java, etc.) can understand how to
-// decode tokenized strings for the given binary. Only attributes that affect
-// the decoding process are recorded.
-//
-// Tokenizer metadata is stored in an array of key-value pairs. Each Metadata
-// object is 32 bytes: a 24-byte string and an 8-byte value. Metadata structs
-// may be parsed in Python with the struct format '24s<Q'.
-PW_PACKED(struct) Metadata {
-  char name[24];   // name of the metadata field
-  uint64_t value;  // value of the field
-};
-
-static_assert(sizeof(Metadata) == 32);
-
-// Store tokenization metadata in its own section. Mach-O files are not
-// supported by pw_tokenizer, but a short, Mach-O compatible section name is
-// used on macOS so that this file can at least compile.
-#if __APPLE__
-#define PW_TOKENIZER_INFO_SECTION PW_KEEP_IN_SECTION(".pw_info")
-#else
-#define PW_TOKENIZER_INFO_SECTION PW_KEEP_IN_SECTION(".pw_tokenzier_info")
-#endif  // __APPLE__
-
-constexpr Metadata metadata[] PW_TOKENIZER_INFO_SECTION = {
-    {"hash_length_bytes", PW_TOKENIZER_CFG_HASH_LENGTH},
-    {"sizeof_long", sizeof(long)},            // %l conversion specifier
-    {"sizeof_intmax_t", sizeof(intmax_t)},    // %j conversion specifier
-    {"sizeof_size_t", sizeof(size_t)},        // %z conversion specifier
-    {"sizeof_ptrdiff_t", sizeof(ptrdiff_t)},  // %t conversion specifier
-};
-
 // Declare the types as an enum for convenience.
 enum class ArgType : uint8_t {
   kInt = PW_TOKENIZER_ARG_TYPE_INT,
@@ -73,15 +38,15 @@ static_assert(0b01u == static_cast<uint8_t>(ArgType::kInt64));
 static_assert(0b10u == static_cast<uint8_t>(ArgType::kDouble));
 static_assert(0b11u == static_cast<uint8_t>(ArgType::kString));
 
-size_t EncodeInt(int value, const span<uint8_t>& output) {
-  return varint::Encode(value, pw::as_writable_bytes(output));
+size_t EncodeInt(int value, const std::span<uint8_t>& output) {
+  return varint::Encode(value, std::as_writable_bytes(output));
 }
 
-size_t EncodeInt64(int64_t value, const span<uint8_t>& output) {
-  return varint::Encode(value, pw::as_writable_bytes(output));
+size_t EncodeInt64(int64_t value, const std::span<uint8_t>& output) {
+  return varint::Encode(value, std::as_writable_bytes(output));
 }
 
-size_t EncodeFloat(float value, const span<uint8_t>& output) {
+size_t EncodeFloat(float value, const std::span<uint8_t>& output) {
   if (output.size() < sizeof(value)) {
     return 0;
   }
@@ -89,7 +54,7 @@ size_t EncodeFloat(float value, const span<uint8_t>& output) {
   return sizeof(value);
 }
 
-size_t EncodeString(const char* string, const span<uint8_t>& output) {
+size_t EncodeString(const char* string, const std::span<uint8_t>& output) {
   // The top bit of the status byte indicates if the string was truncated.
   static constexpr size_t kMaxStringLength = 0x7Fu;
 
@@ -124,9 +89,9 @@ size_t EncodeString(const char* string, const span<uint8_t>& output) {
 
 }  // namespace
 
-size_t EncodeArgs(pw_TokenizerArgTypes types,
+size_t EncodeArgs(_pw_tokenizer_ArgTypes types,
                   va_list args,
-                  span<uint8_t> output) {
+                  std::span<uint8_t> output) {
   size_t arg_count = types & PW_TOKENIZER_TYPE_COUNT_MASK;
   types >>= PW_TOKENIZER_TYPE_COUNT_SIZE_BITS;
 

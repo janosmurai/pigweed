@@ -16,19 +16,20 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include "pw_preprocessor/util.h"
+#include "pw_log/options.h"
+#include "pw_preprocessor/concat.h"
 #include "pw_tokenizer/tokenize_to_global_handler_with_payload.h"
 
 // This macro implements PW_LOG, using
 // PW_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD. The log level, module token, and
 // flags are packed into the payload argument.
 //
-// To use this macro, implement pw_TokenizerHandleEncodedMessageWithPayload,
+// To use this macro, implement pw_tokenizer_HandleEncodedMessageWithPayload,
 // which is defined in pw_tokenizer/tokenize.h. The log metadata can be accessed
 // using pw::log_tokenized::Metadata. For example:
 //
-//   extern "C" void pw_TokenizerHandleEncodedMessageWithPayload(
-//       pw_TokenizerPayload payload, const uint8_t data[], size_t size) {
+//   extern "C" void pw_tokenizer_HandleEncodedMessageWithPayload(
+//       pw_tokenizer_Payload payload, const uint8_t data[], size_t size) {
 //     pw::log_tokenized::Metadata metadata(payload);
 //
 //     if (metadata.level() >= kLogLevel && ModuleEnabled(metadata.module())) {
@@ -36,21 +37,45 @@
 //     }
 //   }
 //
-// TODO(hepler): Pack the hashed version of the module name into the payload.
-#define PW_LOG_TOKENIZED_TO_GLOBAL_HANDLER_WITH_PAYLOAD(              \
-    level, flags, message, ...)                                       \
-  PW_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD(                         \
-      ((uintptr_t)(level) | 0u /* TODO(hepler): add module token */ | \
-       ((uintptr_t)(flags) << (_PW_LOG_TOKENIZED_LEVEL_BITS +         \
-                               _PW_LOG_TOKENIZED_MODULE_BITS))),      \
-      message,                                                        \
-      __VA_ARGS__)
+#define PW_LOG_TOKENIZED_TO_GLOBAL_HANDLER_WITH_PAYLOAD(                       \
+    level, flags, message, ...)                                                \
+  do {                                                                         \
+    _PW_TOKENIZER_CONST uintptr_t _pw_log_module_token =                       \
+        PW_TOKENIZE_STRING_DOMAIN("log_module_names", PW_LOG_MODULE_NAME);     \
+    PW_TOKENIZE_TO_GLOBAL_HANDLER_WITH_PAYLOAD(                                \
+        ((uintptr_t)(level) |                                                  \
+         ((_pw_log_module_token &                                              \
+           ((1u << _PW_LOG_TOKENIZED_MODULE_BITS) - 1u))                       \
+          << _PW_LOG_TOKENIZED_LEVEL_BITS) |                                   \
+         ((uintptr_t)(flags)                                                   \
+          << (_PW_LOG_TOKENIZED_LEVEL_BITS + _PW_LOG_TOKENIZED_MODULE_BITS))), \
+        PW_LOG_TOKENIZED_FORMAT_STRING(message),                               \
+        __VA_ARGS__);                                                          \
+  } while (0)
 
+// By default, log format strings include the PW_LOG_MODULE_NAME, if defined.
 #ifndef PW_LOG_TOKENIZED_FORMAT_STRING
-#define PW_LOG_TOKENIZED_FORMAT_STRING(string) PW_LOG_MODULE_NAME ": " string
+
+#define PW_LOG_TOKENIZED_FORMAT_STRING(string) \
+  PW_CONCAT(_PW_LOG_TOKENIZED_FMT_, PW_LOG_MODULE_NAME_DEFINED)(string)
+
+#define _PW_LOG_TOKENIZED_FMT_0(string) string
+#define _PW_LOG_TOKENIZED_FMT_1(string) PW_LOG_MODULE_NAME " " string
+
 #endif  // PW_LOG_TOKENIZED_FORMAT_STRING
 
+// The log level, module token, and flag bits are packed into the tokenizer's
+// payload argument, which is typically 32 bits. These macros specify the number
+// of bits to use for each field.
+#define _PW_LOG_TOKENIZED_LEVEL_BITS 6
+#define _PW_LOG_TOKENIZED_MODULE_BITS 16
+#define _PW_LOG_TOKENIZED_FLAG_BITS 10
+
 #ifdef __cplusplus
+
+static_assert((_PW_LOG_TOKENIZED_LEVEL_BITS + _PW_LOG_TOKENIZED_MODULE_BITS +
+               _PW_LOG_TOKENIZED_FLAG_BITS) == 32,
+              "Log metadata must fit in a 32-bit integer");
 
 namespace pw {
 namespace log_tokenized {
@@ -99,17 +124,6 @@ class GenericMetadata {
 
   static_assert(level_bits + module_bits + flag_bits <= sizeof(bits_) * 8);
 };
-
-// The log level, module token, and flag bits are packed into the tokenizer's
-// payload argument, which is typically 32 bits. These macros specify the number
-// of bits to use for each field.
-#define _PW_LOG_TOKENIZED_LEVEL_BITS 6
-#define _PW_LOG_TOKENIZED_MODULE_BITS 16
-#define _PW_LOG_TOKENIZED_FLAG_BITS 10
-
-static_assert((_PW_LOG_TOKENIZED_LEVEL_BITS + _PW_LOG_TOKENIZED_MODULE_BITS +
-               _PW_LOG_TOKENIZED_FLAG_BITS) == 32,
-              "Log metadata must fit in a 32-bit integer");
 
 }  // namespace internal
 

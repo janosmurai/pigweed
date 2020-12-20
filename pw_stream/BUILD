@@ -24,16 +24,42 @@ licenses(["notice"])  # Apache License 2.0
 
 pw_cc_library(
     name = "pw_stream",
-    hdrs = [
-      "public/pw_stream/buffered_stream.h",
-      "public/pw_stream/memory_stream.h",
-      "public/pw_stream/stream.h",
-    ],
     srcs = [
-      "memory_stream.cc",
-      "buffered_stream.cc",
+        "buffered_stream.cc",
+        "memory_stream.cc",
+    ],
+    hdrs = [
+        "public/pw_stream/memory_stream.h",
+        "public/pw_stream/null_stream.h",
+        "public/pw_stream/stream.h",
     ],
     includes = ["public"],
+    deps = [
+        "//pw_assert",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_span",
+        "//pw_status",
+    ],
+)
+
+pw_cc_library(
+    name = "pw_stream_socket",
+    srcs = ["socket_stream.cc"],
+    hdrs = ["public/pw_stream/socket_stream.h"],
+    deps = [
+        "//pw_stream",
+        "//pw_sys_io",
+    ],
+)
+
+pw_cc_library(
+    name = "pw_stream_sys_io",
+    hdrs = ["public/pw_stream/sys_io_stream.h"],
+    deps = [
+        "//pw_stream",
+        "//pw_sys_io",
+    ],
 )
 
 pw_cc_test(
@@ -48,9 +74,9 @@ pw_cc_test(
 )
 
 pw_cc_test(
-    name = "buffered_stream_test",
+    name = "stream_test",
     srcs = [
-        "buffered_stream_test.cc",
+        "stream_test.cc",
     ],
     deps = [
         ":pw_stream",

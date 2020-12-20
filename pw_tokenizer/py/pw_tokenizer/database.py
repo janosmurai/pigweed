@@ -21,13 +21,15 @@ maintaining token databases.
 import argparse
 from datetime import datetime
 import glob
+import json
 import logging
 import os
 from pathlib import Path
 import re
 import struct
 import sys
-from typing import Callable, Dict, Iterable, List
+from typing import (Callable, Dict, Iterable, Iterator, List, Pattern, Set,
+                    TextIO, Tuple, Union)
 
 try:
     from pw_tokenizer import elf_reader, tokens
@@ -40,36 +42,117 @@ except ImportError:
 
 _LOG = logging.getLogger('pw_tokenizer')
 
-DEFAULT_DOMAIN = 'default'
-
 
 def _elf_reader(elf) -> elf_reader.Elf:
     return elf if isinstance(elf, elf_reader.Elf) else elf_reader.Elf(elf)
 
 
-def _read_strings_from_elf(elf, domain: str) -> Iterable[str]:
+# Magic number used to indicate the beginning of a tokenized string entry. This
+# value MUST match the value of _PW_TOKENIZER_ENTRY_MAGIC in
+# pw_tokenizer/public/pw_tokenizer/internal/tokenize_string.h.
+_TOKENIZED_ENTRY_MAGIC = 0xBAA98DEE
+_ENTRY = struct.Struct('<4I')
+_TOKENIZED_ENTRY_SECTIONS = re.compile(
+    r'^\.pw_tokenizer.entries(?:\.[_\d]+)?$')
+
+_LEGACY_STRING_SECTIONS = re.compile(
+    r'^\.pw_tokenized\.(?P<domain>[^.]+)(?:\.\d+)?$')
+
+_ERROR_HANDLER = 'surrogateescape'  # How to deal with UTF-8 decoding errors
+
+
+class Error(Exception):
+    """Failed to extract token entries from an ELF file."""
+
+
+def _read_tokenized_entries(
+        data: bytes,
+        domain: Pattern[str]) -> Iterator[tokens.TokenizedStringEntry]:
+    index = 0
+
+    while index + _ENTRY.size <= len(data):
+        magic, token, domain_len, string_len = _ENTRY.unpack_from(data, index)
+
+        if magic != _TOKENIZED_ENTRY_MAGIC:
+            raise Error(
+                f'Expected magic number 0x{_TOKENIZED_ENTRY_MAGIC:08x}, '
+                f'found 0x{magic:08x}')
+
+        start = index + _ENTRY.size
+        index = start + domain_len + string_len
+
+        # Create the entries, trimming null terminators.
+        entry = tokens.TokenizedStringEntry(
+            token,
+            data[start + domain_len:index - 1].decode(errors=_ERROR_HANDLER),
+            data[start:start + domain_len - 1].decode(errors=_ERROR_HANDLER),
+        )
+
+        if data[start + domain_len - 1] != 0:
+            raise Error(
+                f'Domain {entry.domain} for {entry.string} not null terminated'
+            )
+
+        if data[index - 1] != 0:
+            raise Error(f'String {entry.string} is not null terminated')
+
+        if domain.fullmatch(entry.domain):
+            yield entry
+
+
+def _read_tokenized_strings(sections: Dict[str, bytes],
+                            domain: Pattern[str]) -> Iterator[tokens.Database]:
+    # Legacy ELF files used "default" as the default domain instead of "". Remap
+    # the default if necessary.
+    if domain.pattern == tokens.DEFAULT_DOMAIN:
+        domain = re.compile('default')
+
+    for section, data in sections.items():
+        match = _LEGACY_STRING_SECTIONS.match(section)
+        if match and domain.match(match.group('domain')):
+            yield tokens.Database.from_strings(
+                (s.decode(errors=_ERROR_HANDLER) for s in data.split(b'\0')),
+                match.group('domain'))
+
+
+def _database_from_elf(elf, domain: Pattern[str]) -> tokens.Database:
     """Reads the tokenized strings from an elf_reader.Elf or ELF file object."""
     _LOG.debug('Reading tokenized strings in domain "%s" from %s', domain, elf)
 
-    sections = _elf_reader(elf).dump_sections(
-        rf'^\.pw_tokenized\.{domain}(?:\.\d+)?$')
-    if sections is not None:
-        for string in sections.split(b'\0'):
-            yield string.decode()
+    reader = _elf_reader(elf)
+
+    # Read tokenized string entries.
+    section_data = reader.dump_section_contents(_TOKENIZED_ENTRY_SECTIONS)
+    if section_data is not None:
+        return tokens.Database(_read_tokenized_entries(section_data, domain))
+
+    # Read legacy null-terminated string entries.
+    sections = reader.dump_sections(_LEGACY_STRING_SECTIONS)
+    if sections:
+        return tokens.Database.merged(
+            *_read_tokenized_strings(sections, domain))
+
+    return tokens.Database([])
 
 
-def tokenization_domains(elf) -> Iterable[str]:
+def tokenization_domains(elf) -> Iterator[str]:
     """Lists all tokenization domains in an ELF file."""
-    tokenized_section = re.compile(r'\.pw_tokenized\.(?P<domain>.+)(?:\.\d+)?')
-    for section in _elf_reader(elf).sections:
-        match = tokenized_section.match(section.name)
-        if match:
-            yield match.group('domain')
+    reader = _elf_reader(elf)
+    section_data = reader.dump_section_contents(_TOKENIZED_ENTRY_SECTIONS)
+    if section_data is not None:
+        yield from frozenset(
+            e.domain
+            for e in _read_tokenized_entries(section_data, re.compile('.*')))
+    else:  # Check for the legacy domain sections
+        for section in reader.sections:
+            match = _LEGACY_STRING_SECTIONS.match(section.name)
+            if match:
+                yield match.group('domain')
 
 
 def read_tokenizer_metadata(elf) -> Dict[str, int]:
     """Reads the metadata entries from an ELF."""
-    sections = _elf_reader(elf).dump_sections(r'\.pw_tokenizer_info')
+    sections = _elf_reader(elf).dump_section_contents(r'\.pw_tokenizer\.info')
 
     metadata: Dict[str, int] = {}
     if sections is not None:
@@ -83,7 +166,7 @@ def read_tokenizer_metadata(elf) -> Dict[str, int]:
     return metadata
 
 
-def _load_token_database(db, domain: str) -> tokens.Database:
+def _load_token_database(db, domain: Pattern[str]) -> tokens.Database:
     """Loads a Database from a database object, ELF, CSV, or binary database."""
     if db is None:
         return tokens.Database()
@@ -92,7 +175,7 @@ def _load_token_database(db, domain: str) -> tokens.Database:
         return db
 
     if isinstance(db, elf_reader.Elf):
-        return tokens.Database.from_strings(_read_strings_from_elf(db, domain))
+        return _database_from_elf(db, domain)
 
     # If it's a str, it might be a path. Check if it's an ELF or CSV.
     if isinstance(db, (str, Path)):
@@ -103,15 +186,14 @@ def _load_token_database(db, domain: str) -> tokens.Database:
         # Read the path as an ELF file.
         with open(db, 'rb') as fd:
             if elf_reader.compatible_file(fd):
-                return tokens.Database.from_strings(
-                    _read_strings_from_elf(fd, domain))
+                return _database_from_elf(fd, domain)
 
         # Read the path as a packed binary or CSV file.
         return tokens.DatabaseFile(db)
 
     # Assume that it's a file object and check if it's an ELF.
     if elf_reader.compatible_file(db):
-        return tokens.Database.from_strings(_read_strings_from_elf(db, domain))
+        return _database_from_elf(db, domain)
 
     # Read the database as CSV or packed binary from a file object's path.
     if hasattr(db, 'name') and os.path.exists(db.name):
@@ -121,14 +203,17 @@ def _load_token_database(db, domain: str) -> tokens.Database:
     return tokens.Database(tokens.parse_csv(db))
 
 
-def load_token_database(*databases,
-                        domain: str = DEFAULT_DOMAIN) -> tokens.Database:
+def load_token_database(
+    *databases,
+    domain: Union[str,
+                  Pattern[str]] = tokens.DEFAULT_DOMAIN) -> tokens.Database:
     """Loads a Database from database objects, ELFs, CSVs, or binary files."""
+    domain = re.compile(domain)
     return tokens.Database.merged(*(_load_token_database(db, domain)
                                     for db in databases))
 
 
-def generate_report(db: tokens.Database) -> Dict[str, int]:
+def database_summary(db: tokens.Database) -> Dict[str, int]:
     """Returns a simple report of properties of the database."""
     present = [entry for entry in db.entries() if not entry.date_removed]
 
@@ -143,7 +228,33 @@ def generate_report(db: tokens.Database) -> Dict[str, int]:
     }
 
 
-def _handle_create(databases, database, force, output_type, include, exclude):
+_DatabaseReport = Dict[str, Dict[str, Dict[str, int]]]
+
+
+def generate_reports(paths: Iterable[Path]) -> _DatabaseReport:
+    """Returns a dictionary with information about the provided databases."""
+    reports: _DatabaseReport = {}
+
+    for path in paths:
+        with path.open('rb') as file:
+            if elf_reader.compatible_file(file):
+                domains = list(tokenization_domains(file))
+            else:
+                domains = ['']
+
+        domain_reports = {}
+
+        for domain in domains:
+            domain_reports[domain] = database_summary(
+                load_token_database(path, domain=domain))
+
+        reports[str(path)] = domain_reports
+
+    return reports
+
+
+def _handle_create(databases, database, force, output_type, include, exclude,
+                   replace):
     """Creates a token database file from one or more ELF files."""
 
     if database == '-':
@@ -156,7 +267,7 @@ def _handle_create(databases, database, force, output_type, include, exclude):
         fd = open(database, 'wb')
 
     database = tokens.Database.merged(*databases)
-    database.filter(include, exclude)
+    database.filter(include, exclude, replace)
 
     with fd:
         if output_type == 'csv':
@@ -174,7 +285,7 @@ def _handle_add(token_database, databases):
     initial = len(token_database)
 
     for source in databases:
-        token_database.add((entry.string for entry in source.entries()))
+        token_database.add(source.entries())
 
     token_database.write_to_file()
 
@@ -184,8 +295,7 @@ def _handle_add(token_database, databases):
 
 def _handle_mark_removals(token_database, databases, date):
     marked_removed = token_database.mark_removals(
-        (entry.string
-         for entry in tokens.Database.merged(*databases).entries()
+        (entry for entry in tokens.Database.merged(*databases).entries()
          if not entry.date_removed), date)
 
     token_database.write_to_file()
@@ -201,27 +311,9 @@ def _handle_purge(token_database, before):
     _LOG.info('Removed %d entries from %s', len(purged), token_database.path)
 
 
-def _handle_report(token_database_or_elf, output):
-    for path in token_database_or_elf:
-        with path.open('rb') as file:
-            if elf_reader.compatible_file(file):
-                domains = list(tokenization_domains(file))
-            else:
-                domains = [path.name]
-
-        for domain in domains:
-            output.write(
-                '[{name}]\n'
-                '                 Domain: {domain}\n'
-                '        Entries present: {present_entries}\n'
-                '        Size of strings: {present_size_bytes} B\n'
-                '          Total entries: {total_entries}\n'
-                '  Total size of strings: {total_size_bytes} B\n'
-                '             Collisions: {collisions} tokens\n'.format(
-                    name=path,
-                    domain=domain,
-                    **generate_report(load_token_database(path,
-                                                          domain=domain))))
+def _handle_report(token_database_or_elf: List[Path], output: TextIO) -> None:
+    json.dump(generate_reports(token_database_or_elf), output, indent=2)
+    output.write('\n')
 
 
 def expand_paths_or_globs(*paths_or_globs: str) -> Iterable[Path]:
@@ -231,12 +323,16 @@ def expand_paths_or_globs(*paths_or_globs: str) -> Iterable[Path]:
             # This is a valid path; yield it without evaluating it as a glob.
             yield Path(path_or_glob)
         else:
-            paths = glob.glob(path_or_glob)
-            if not paths:
+            paths = glob.glob(path_or_glob, recursive=True)
+
+            # If no paths were found and the path is not a glob, raise an Error.
+            if not paths and not any(c in path_or_glob for c in '*?[]!'):
                 raise FileNotFoundError(f'{path_or_glob} is not a valid path')
 
             for path in paths:
-                yield Path(path)
+                # Resolve globs to CSV or compatible binary files.
+                if elf_reader.compatible_file(path) or path.endswith('.csv'):
+                    yield Path(path)
 
 
 class ExpandGlobs(argparse.Action):
@@ -245,38 +341,54 @@ class ExpandGlobs(argparse.Action):
         setattr(namespace, self.dest, list(expand_paths_or_globs(*values)))
 
 
-def _read_elf_with_domain(elf: str, domain: str) -> Iterable[tokens.Database]:
+def _read_elf_with_domain(elf: str,
+                          domain: Pattern[str]) -> Iterable[tokens.Database]:
     for path in expand_paths_or_globs(elf):
         with path.open('rb') as file:
             if not elf_reader.compatible_file(file):
                 raise ValueError(f'{elf} is not an ELF file, '
                                  f'but the "{domain}" domain was specified')
 
-            yield tokens.Database.from_strings(
-                _read_strings_from_elf(file, domain))
+            yield _database_from_elf(file, domain)
 
 
-class _LoadTokenDatabases(argparse.Action):
-    """Argparse action that reads tokenize databases from paths or globs."""
+class LoadTokenDatabases(argparse.Action):
+    """Argparse action that reads tokenize databases from paths or globs.
+
+    ELF files may have #domain appended to them to specify a tokenization domain
+    other than the default.
+    """
     def __call__(self, parser, namespace, values, option_string=None):
         databases: List[tokens.Database] = []
-        paths: List[Path] = []
+        paths: Set[Path] = set()
 
         try:
             for value in values:
                 if value.count('#') == 1:
-                    databases.extend(_read_elf_with_domain(*value.split('#')))
+                    path, domain = value.split('#')
+                    domain = re.compile(domain)
+                    databases.extend(_read_elf_with_domain(path, domain))
                 else:
-                    paths.extend(expand_paths_or_globs(value))
+                    paths.update(expand_paths_or_globs(value))
 
-            databases += (load_token_database(path) for path in paths)
-        except (FileNotFoundError, ValueError) as err:
+            for path in paths:
+                databases.append(load_token_database(path))
+        except tokens.DatabaseFormatError as err:
+            parser.error(
+                f'argument elf_or_token_database: {path} is not a supported '
+                'token database file. Only ELF files or token databases (CSV '
+                f'or binary format) are supported. {err}. ')
+        except FileNotFoundError as err:
             parser.error(f'argument elf_or_token_database: {err}')
+        except:  # pylint: disable=bare-except
+            _LOG.exception('Failed to load token database %s', path)
+            parser.error('argument elf_or_token_database: '
+                         f'Error occurred while loading token database {path}')
 
         setattr(namespace, self.dest, databases)
 
 
-def token_databases_parser() -> argparse.ArgumentParser:
+def token_databases_parser(nargs: str = '+') -> argparse.ArgumentParser:
     """Returns an argument parser for reading token databases.
 
     These arguments can be added to another parser using the parents arg.
@@ -285,13 +397,14 @@ def token_databases_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         'databases',
         metavar='elf_or_token_database',
-        nargs='+',
-        action=_LoadTokenDatabases,
+        nargs=nargs,
+        action=LoadTokenDatabases,
         help=('ELF or token database files from which to read strings and '
               'tokens. For ELF files, the tokenization domain to read from '
               'may specified after the path as #domain_name (e.g. '
               'foo.elf#TEST_DOMAIN). Unless specified, only the default '
-              'domain is read from ELF files; .* reads all domains.'))
+              'domain ("") is read from ELF files; .* reads all domains. '
+              'Globs are expanded to compatible database files.'))
     return parser
 
 
@@ -314,7 +427,7 @@ def _parse_args():
                            required=True,
                            help='The database file to update.')
 
-    option_tokens = token_databases_parser()
+    option_tokens = token_databases_parser('*')
 
     # Top-level argument parser.
     parser = argparse.ArgumentParser(
@@ -352,17 +465,46 @@ def _parse_args():
         '-i',
         '--include',
         type=re.compile,
+        default=[],
         action='append',
-        help=(
-            'If provided, at least one of these regular expressions must match '
-            'for a string to be included in the database.'))
+        help=('If provided, at least one of these regular expressions must '
+              'match for a string to be included in the database.'))
     subparser.add_argument(
         '-e',
         '--exclude',
         type=re.compile,
+        default=[],
         action='append',
         help=('If provided, none of these regular expressions may match for a '
               'string to be included in the database.'))
+
+    unescaped_slash = re.compile(r'(?<!\\)/')
+
+    def replacement(value: str) -> Tuple[Pattern, 'str']:
+        try:
+            find, sub = unescaped_slash.split(value, 1)
+        except ValueError as err:
+            raise argparse.ArgumentTypeError(
+                'replacements must be specified as "search_regex/replacement"')
+
+        try:
+            return re.compile(find.replace(r'\/', '/')), sub
+        except re.error as err:
+            raise argparse.ArgumentTypeError(
+                f'"{value}" is not a valid regular expression: {err}')
+
+    subparser.add_argument(
+        '--replace',
+        type=replacement,
+        default=[],
+        action='append',
+        help=('If provided, replaces text that matches a regular expression. '
+              'This can be used to replace sensitive terms in a token '
+              'database that will be distributed publicly. The expression and '
+              'replacement are specified as "search_regex/replacement". '
+              'Plain slash characters in the regex must be escaped with a '
+              r'backslash (\/). The replacement text may include '
+              'backreferences for captured groups in the regex.'))
 
     # The 'add' command adds strings to a database from a set of ELFs.
     subparser = subparsers.add_parser(

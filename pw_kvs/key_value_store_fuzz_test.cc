@@ -41,10 +41,12 @@ ChecksumCrc16 checksum;
 
 class EmptyInitializedKvs : public ::testing::Test {
  protected:
+  // For KVS magic value always use a random 32 bit integer rather than a
+  // human readable 4 bytes. See pw_kvs/format.h for more information.
   EmptyInitializedKvs()
-      : kvs_(&test_partition, {.magic = 0xBAD'C0D3, .checksum = &checksum}) {
+      : kvs_(&test_partition, {.magic = 0x873a9b50, .checksum = &checksum}) {
     test_partition.Erase(0, test_partition.sector_count());
-    ASSERT_EQ(Status::OK, kvs_.Init());
+    ASSERT_EQ(Status::Ok(), kvs_.Init());
   }
 
   KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs_;
@@ -61,9 +63,9 @@ TEST_F(EmptyInitializedKvs, Put_VaryingKeysAndValues) {
   for (int i = 0; i < kFuzzIterations; ++i) {
     for (unsigned key_size = 1; key_size < sizeof(value); ++key_size) {
       for (unsigned value_size = 0; value_size < sizeof(value); ++value_size) {
-        ASSERT_EQ(Status::OK,
+        ASSERT_EQ(Status::Ok(),
                   kvs_.Put(std::string_view(value, key_size),
-                           as_bytes(span(value, value_size))));
+                           std::as_bytes(std::span(value, value_size))));
       }
     }
   }

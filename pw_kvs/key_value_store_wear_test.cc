@@ -25,7 +25,9 @@
 namespace pw::kvs {
 namespace {
 
-constexpr EntryFormat format{.magic = 0xBAD'C0D3, .checksum = nullptr};
+// For KVS magic value always use a random 32 bit integer rather than a
+// human readable 4 bytes. See pw_kvs/format.h for more information.
+constexpr EntryFormat format{.magic = 0x1bce4ad5, .checksum = nullptr};
 
 class WearTest : public ::testing::Test {
  protected:
@@ -33,7 +35,7 @@ class WearTest : public ::testing::Test {
       : flash_(internal::Entry::kMinAlignmentBytes),
         partition_(&flash_, 0, flash_.sector_count()),
         kvs_(&partition_, format) {
-    EXPECT_EQ(Status::OK, kvs_.Init());
+    EXPECT_EQ(Status::Ok(), kvs_.Init());
   }
 
   static constexpr size_t kSectors = 16;
@@ -63,7 +65,7 @@ TEST_F(WearTest, RepeatedLargeEntry) {
     // written.
     test_data[0]++;
 
-    EXPECT_TRUE(kvs_.Put("large_entry", span(test_data)).ok());
+    EXPECT_TRUE(kvs_.Put("large_entry", std::span(test_data)).ok());
   }
 
   // Ensure every sector has been erased at several times due to garbage
@@ -90,8 +92,9 @@ TEST_F(WearTest, TwoPassFillWithLargeAndLarger) {
     test_data[0]++;
 
     EXPECT_EQ(
-        Status::OK,
-        kvs_.Put("key", as_bytes(span(test_data, sizeof(test_data) - 70))));
+        Status::Ok(),
+        kvs_.Put("key",
+                 std::as_bytes(std::span(test_data, sizeof(test_data) - 70))));
   }
 
   // Add many copies of a differently sized entry that is larger than the
@@ -102,7 +105,7 @@ TEST_F(WearTest, TwoPassFillWithLargeAndLarger) {
     test_data[0]++;
 
     printf("Add entry %zu\n", i);
-    EXPECT_EQ(Status::OK, kvs_.Put("big_key", test_data));
+    EXPECT_EQ(Status::Ok(), kvs_.Put("big_key", test_data));
   }
 
   EXPECT_EQ(2u, kvs_.size());

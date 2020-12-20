@@ -20,14 +20,14 @@ namespace pw::kvs {
 
 using std::byte;
 
-Status ChecksumAlgorithm::Verify(span<const byte> checksum) const {
+Status ChecksumAlgorithm::Verify(std::span<const byte> checksum) const {
   if (checksum.size() < size_bytes()) {
-    return Status::INVALID_ARGUMENT;
+    return Status::InvalidArgument();
   }
   if (std::memcmp(state_.data(), checksum.data(), size_bytes()) != 0) {
-    return Status::DATA_LOSS;
+    return Status::DataLoss();
   }
-  return Status::OK;
+  return Status::Ok();
 }
 
 }  // namespace pw::kvs

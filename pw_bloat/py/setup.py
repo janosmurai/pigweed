@@ -13,14 +13,7 @@
 # the License.
 """pw_bloat"""
 
-import unittest
-import setuptools
-
-
-def test_suite():
-    """Test suite for pw_bloat module."""
-    return unittest.TestLoader().discover('./', pattern='*_test.py')
-
+import setuptools  # type: ignore
 
 setuptools.setup(
     name='pw_bloat',
@@ -29,5 +22,6 @@ setuptools.setup(
     author_email='pigweed-developers@googlegroups.com',
     description='Tools for generating binary size report cards',
     packages=setuptools.find_packages(),
-    test_suite='setup.test_suite',
+    package_data={'pw_bloat': ['py.typed']},
+    zip_safe=False,
 )

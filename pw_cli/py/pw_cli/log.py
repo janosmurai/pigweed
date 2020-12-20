@@ -14,7 +14,8 @@
 """Configure the system logger for the default pw command log format."""
 
 import logging
-from typing import NamedTuple, Optional
+from pathlib import Path
+from typing import NamedTuple, Union
 
 import pw_cli.color
 import pw_cli.env
@@ -33,8 +34,6 @@ class LogLevel(NamedTuple):
 
 # Shorten all the log levels to 3 characters for column-aligned logs.
 # Color the logs using ANSI codes.
-# pylint: disable=bad-whitespace
-# yapf: disable
 _LOG_LEVELS = (
     LogLevel(logging.CRITICAL, 'bold_red', 'CRT', '☠️ '),
     LogLevel(logging.ERROR,    'red',      'ERR', '❌'),
@@ -42,9 +41,7 @@ _LOG_LEVELS = (
     LogLevel(logging.INFO,     'magenta',  'INF', 'ℹ️ '),
     LogLevel(LOGLEVEL_STDOUT,  'cyan',     'OUT', '💬'),
     LogLevel(logging.DEBUG,    'blue',     'DBG', '👾'),
-)
-# yapf: enable
-# pylint: enable=bad-whitespace
+)  # yapf: disable
 
 _LOG = logging.getLogger(__name__)
 _STDERR_HANDLER = logging.StreamHandler()
@@ -66,8 +63,9 @@ def main() -> None:
 
 
 def install(level: int = logging.INFO,
-            use_color: Optional[bool] = None,
-            hide_timestamp: bool = False) -> None:
+            use_color: bool = None,
+            hide_timestamp: bool = False,
+            log_file: Union[str, Path] = None) -> None:
     """Configure the system logger for the default pw command log format."""
 
     colors = pw_cli.color.colors(use_color)
@@ -88,11 +86,12 @@ def install(level: int = logging.INFO,
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
-    _STDERR_HANDLER.setLevel(level)
-    _STDERR_HANDLER.setFormatter(
+    handler = logging.FileHandler(log_file) if log_file else _STDERR_HANDLER
+    handler.setLevel(level)
+    handler.setFormatter(
         logging.Formatter(timestamp_fmt + '%(levelname)s %(message)s',
                           '%Y%m%d %H:%M:%S'))
-    root.addHandler(_STDERR_HANDLER)
+    root.addHandler(handler)
 
     if env.PW_EMOJI:
         name_attr = 'emoji'

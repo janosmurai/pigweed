@@ -13,14 +13,7 @@
 # the License.
 """lm3s6965evb_qemu_utils"""
 
-import unittest
-import setuptools
-
-
-def test_suite():
-    """Test suite for lm3s6965evb_qemu_utils."""
-    return unittest.TestLoader().discover('./', pattern='*_test.py')
-
+import setuptools  # type: ignore
 
 setuptools.setup(
     name='lm3s6965evb_qemu_utils',
@@ -30,7 +23,8 @@ setuptools.setup(
     description=
     'Target-specific python scripts for the lm3s6965evb-qemu target',
     packages=setuptools.find_packages(),
-    test_suite='setup.test_suite',
+    package_data={'lm3s6965evb_qemu_utils': ['py.typed']},
+    zip_safe=False,
     entry_points={
         'console_scripts': [
             'lm3s6965evb_qemu_unit_test_runner = '

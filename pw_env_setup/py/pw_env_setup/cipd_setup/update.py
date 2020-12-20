@@ -24,6 +24,7 @@ from __future__ import print_function
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,7 @@ def parse(argv=None):
     )
     parser.add_argument('--package-file',
                         dest='package_files',
+                        metavar='PACKAGE_FILE',
                         action='append')
     parser.add_argument('--cipd',
                         default=os.path.join(script_root, 'wrapper.py'))
@@ -59,32 +61,66 @@ def parse(argv=None):
     return parser.parse_args(argv)
 
 
-def check_auth(cipd, paths=('pigweed', )):
+def check_auth(cipd, package_files):
     """Check have access to CIPD pigweed directory."""
 
+    paths = []
+    for package_file in package_files:
+        with open(package_file, 'r') as ins:
+            # This is an expensive RPC, so only check the first few entries
+            # in each file.
+            for i, entry in enumerate(json.load(ins)):
+                if i >= 3:
+                    break
+                parts = entry['path'].split('/')
+                while '${' in parts[-1]:
+                    parts.pop(-1)
+                paths.append('/'.join(parts))
+
     try:
-        subprocess.check_output([cipd, 'auth-info'], stderr=subprocess.STDOUT)
+        output = subprocess.check_output([cipd, 'auth-info'],
+                                         stderr=subprocess.STDOUT).decode()
         logged_in = True
+
+        username = None
+        match = re.search(r'Logged in as (\S*)\.', output)
+        if match:
+            username = match.group(1)
+
     except subprocess.CalledProcessError:
         logged_in = False
 
     for path in paths:
         # Not catching CalledProcessError because 'cipd ls' seems to never
-        # return an error code.
+        # return an error code unless it can't reach the CIPD server.
         output = subprocess.check_output([cipd, 'ls', path],
                                          stderr=subprocess.STDOUT).decode()
-        if 'No matching packages' in output:
-            print()
-            print('=' * 60, file=sys.stderr)
+        if 'No matching packages' not in output:
+            continue
+
+        # 'cipd ls' only lists sub-packages but ignores any packages at the
+        # given path. 'cipd instances' will give versions of that package.
+        # 'cipd instances' does use an error code if there's no such package or
+        # that package is inaccessible.
+        try:
+            subprocess.check_output([cipd, 'instances', path],
+                                    stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            stderr = lambda *args: print(*args, file=sys.stderr)
+            stderr()
+            stderr('=' * 60)
+            stderr('ERROR: no access to CIPD path "{}"'.format(path))
             if logged_in:
-                print('ERROR: no access to CIPD path "{}":'.format(path),
-                      file=sys.stderr)
+                username_part = ''
+                if username:
+                    username_part = '({}) '.format(username)
+                stderr('Your account {}does not have access to this '
+                       'path'.format(username_part))
             else:
-                print('ERROR: no access to CIPD path "{}", try logging in '
-                      'with this command:'.format(path),
-                      file=sys.stderr)
-                print(cipd, 'auth-login', file=sys.stderr)
-            print('=' * 60, file=sys.stderr)
+                stderr('Try logging in with this command:')
+                stderr()
+                stderr('    {} auth-login'.format(cipd))
+            stderr('=' * 60)
             return False
 
     return True
@@ -104,6 +140,7 @@ def write_ensure_file(package_file, ensure_file):
                    '$ParanoidMode CheckPresence\n')
 
         for entry in data:
+            outs.write('@Subdir {}\n'.format(entry.get('subdir', '')))
             outs.write('{} {}\n'.format(entry['path'],
                                         ' '.join(entry['tags'])))
 
@@ -117,7 +154,7 @@ def update(
 ):
     """Grab the tools listed in ensure_files."""
 
-    if not check_auth(cipd):
+    if not check_auth(cipd, package_files):
         return False
 
     # TODO(mohrr) use os.makedirs(..., exist_ok=True).
@@ -156,6 +193,7 @@ def update(
             '-ensure-file', ensure_file,
             '-root', install_dir,
             '-log-level', 'warning',
+            '-cache-dir', cache_dir,
             '-max-threads', '0',  # 0 means use CPU count.
         ]  # yapf: disable
 

@@ -24,131 +24,152 @@ extern "C" {
 // Status implicitly convert to one another and can be passed cleanly between C
 // and C++ APIs.
 //
-// pw_Status uses the canonical Google error codes. The following was copied
-// from Tensorflow and prefixed with PW_STATUS_.
+// pw_Status uses the canonical Google error codes. The following enum was based
+// on Abseil's status/status.h. The values are all-caps and prefixed with
+// PW_STATUS_ instead of using C++ constant style.
 typedef enum {
-  PW_STATUS_OK = 0,  // Use Status::OK in C++
+  // Ok (gRPC code "OK") does not indicate an error; this value is returned on
+  // success. It is typical to check for this value before proceeding on any
+  // given call across an API or RPC boundary. To check this value, use the
+  // `Status::ok()` member function rather than inspecting the raw code.
+  PW_STATUS_OK = 0,  // Use Status::Ok() in C++
 
-  // The operation was cancelled (typically by the caller).
-  PW_STATUS_CANCELLED = 1,  // Use Status::CANCELLED in C++
+  // Cancelled (gRPC code "CANCELLED") indicates the operation was cancelled,
+  // typically by the caller.
+  PW_STATUS_CANCELLED = 1,  // Use Status::Cancelled() in C++
 
-  // Unknown error.  An example of where this error may be returned is
-  // if a Status value received from another address space belongs to
-  // an error-space that is not known in this address space.  Also,
-  // errors raised by APIs that do not return enough error information
-  // may be converted to this error.
-  PW_STATUS_UNKNOWN = 2,  // Use Status::UNKNOWN in C++
+  // Unknown (gRPC code "UNKNOWN") indicates an unknown error occurred. In
+  // general, more specific errors should be raised, if possible. Errors raised
+  // by APIs that do not return enough error information may be converted to
+  // this error.
+  PW_STATUS_UNKNOWN = 2,  // Use Status::Unknown() in C++
 
-  // Client specified an invalid argument.  Note that this differs
-  // from FAILED_PRECONDITION.  INVALID_ARGUMENT indicates arguments
-  // that are problematic regardless of the state of the system
-  // (e.g. a malformed file name).
-  PW_STATUS_INVALID_ARGUMENT = 3,  // Use Status::INVALID_ARGUMENT in C++
+  // InvalidArgument (gRPC code "INVALID_ARGUMENT") indicates the caller
+  // specified an invalid argument, such a malformed filename. Note that such
+  // errors should be narrowly limited to indicate to the invalid nature of the
+  // arguments themselves. Errors with validly formed arguments that may cause
+  // errors with the state of the receiving system should be denoted with
+  // `FailedPrecondition` instead.
+  PW_STATUS_INVALID_ARGUMENT = 3,  // Use Status::InvalidArgument() in C++
 
-  // Deadline expired before operation could complete.  For operations
-  // that change the state of the system, this error may be returned
-  // even if the operation has completed successfully.  For example, a
-  // successful response from a server could have been delayed long
-  // enough for the deadline to expire.
-  PW_STATUS_DEADLINE_EXCEEDED = 4,  // Use Status::DEADLINE_EXCEEDED in C++
+  // DeadlineExceeded (gRPC code "DEADLINE_EXCEEDED") indicates a deadline
+  // expired before the operation could complete. For operations that may change
+  // state within a system, this error may be returned even if the operation has
+  // completed successfully. For example, a successful response from a server
+  // could have been delayed long enough for the deadline to expire.
+  PW_STATUS_DEADLINE_EXCEEDED = 4,  // Use Status::DeadlineExceeded() in C++
 
-  // Some requested entity (e.g. file or directory) was not found.
-  // For privacy reasons, this code *may* be returned when the client
-  // does not have the access right to the entity.
-  PW_STATUS_NOT_FOUND = 5,  // Use Status::NOT_FOUND in C++
-
-  // Some entity that we attempted to create (e.g. file or directory)
-  // already exists.
-  PW_STATUS_ALREADY_EXISTS = 6,  // Use Status::ALREADY_EXISTS in C++
-
-  // The caller does not have permission to execute the specified
-  // operation.  PERMISSION_DENIED must not be used for rejections
-  // caused by exhausting some resource (use RESOURCE_EXHAUSTED
-  // instead for those errors).  PERMISSION_DENIED must not be
-  // used if the caller cannot be identified (use UNAUTHENTICATED
-  // instead for those errors).
-  PW_STATUS_PERMISSION_DENIED = 7,  // Use Status::PERMISSION_DENIED in C++
-
-  // The request does not have valid authentication credentials for the
-  // operation.
-  PW_STATUS_UNAUTHENTICATED = 16,  // Use Status::UNAUTHENTICATED in C++
-
-  // Some resource has been exhausted, perhaps a per-user quota, or
-  // perhaps the entire filesystem is out of space.
-  PW_STATUS_RESOURCE_EXHAUSTED = 8,  // Use Status::RESOURCE_EXHAUSTED in C++
-
-  // Operation was rejected because the system is not in a state
-  // required for the operation's execution.  For example, directory
-  // to be deleted may be non-empty, an rmdir operation is applied to
-  // a non-directory, etc.
+  // NotFound (gRPC code "NOT_FOUND") indicates some requested entity (such as
+  // a file or directory) was not found.
   //
-  // A litmus test that may help a service implementer in deciding
-  // between FAILED_PRECONDITION, ABORTED, and UNAVAILABLE:
-  //  (a) Use UNAVAILABLE if the client can retry just the failing call.
-  //  (b) Use ABORTED if the client should retry at a higher-level
-  //      (e.g. restarting a read-modify-write sequence).
-  //  (c) Use FAILED_PRECONDITION if the client should not retry until
-  //      the system state has been explicitly fixed.  E.g. if an "rmdir"
-  //      fails because the directory is non-empty, FAILED_PRECONDITION
+  // `NotFound` is useful if a request should be denied for an entire class of
+  // users, such as during a gradual feature rollout or undocumented allow list.
+  // If, instead, a request should be denied for specific sets of users, such as
+  // through user-based access control, use `PermissionDenied` instead.
+  PW_STATUS_NOT_FOUND = 5,  // Use Status::NotFound() in C++
+
+  // AlreadyExists (gRPC code "ALREADY_EXISTS") indicates the entity that a
+  // caller attempted to create (such as file or directory) is already present.
+  PW_STATUS_ALREADY_EXISTS = 6,  // Use Status::AlreadyExists() in C++
+
+  // PermissionDenied (gRPC code "PERMISSION_DENIED") indicates that the caller
+  // does not have permission to execute the specified operation. Note that this
+  // error is different than an error due to an *un*authenticated user. This
+  // error code does not imply the request is valid or the requested entity
+  // exists or satisfies any other pre-conditions.
+  //
+  // `PermissionDenied` must not be used for rejections caused by exhausting
+  // some resource. Instead, use `ResourceExhausted` for those errors.
+  // `PermissionDenied` must not be used if the caller cannot be identified.
+  // Instead, use `Unauthenticated` for those errors.
+  PW_STATUS_PERMISSION_DENIED = 7,  // Use Status::PermissionDenied() in C++
+
+  // ResourceExhausted (gRPC code "RESOURCE_EXHAUSTED") indicates some resource
+  // has been exhausted, perhaps a per-user quota, or perhaps the entire file
+  // system is out of space.
+  PW_STATUS_RESOURCE_EXHAUSTED = 8,  // Use Status::ResourceExhausted() in C++
+
+  // FailedPrecondition (gRPC code "FAILED_PRECONDITION") indicates that the
+  // operation was rejected because the system is not in a state required for
+  // the operation's execution. For example, a directory to be deleted may be
+  // non-empty, an "rmdir" operation is applied to a non-directory, etc.
+  //
+  // Some guidelines that may help a service implementer in deciding between
+  // `FailedPrecondition`, `Aborted`, and `Unavailable`:
+  //
+  //  (a) Use `Unavailable` if the client can retry just the failing call.
+  //  (b) Use `Aborted` if the client should retry at a higher transaction
+  //      level (such as when a client-specified test-and-set fails, indicating
+  //      the client should restart a read-modify-write sequence).
+  //  (c) Use `FailedPrecondition` if the client should not retry until
+  //      the system state has been explicitly fixed. For example, if an "rmdir"
+  //      fails because the directory is non-empty, `FailedPrecondition`
   //      should be returned since the client should not retry unless
-  //      they have first fixed up the directory by deleting files from it.
-  //  (d) Use FAILED_PRECONDITION if the client performs conditional
-  //      REST Get/Update/Delete on a resource and the resource on the
-  //      server does not match the condition. E.g. conflicting
-  //      read-modify-write on the same resource.
-  PW_STATUS_FAILED_PRECONDITION = 9,  // Use Status::FAILED_PRECONDITION in C++
+  //      the files are deleted from the directory.
+  PW_STATUS_FAILED_PRECONDITION = 9,  // Use Status::FailedPrecondition() in C++
 
-  // The operation was aborted, typically due to a concurrency issue
-  // like sequencer check failures, transaction aborts, etc.
+  // Aborted (gRPC code "ABORTED") indicates the operation was aborted,
+  // typically due to a concurrency issue such as a sequencer check failure or a
+  // failed transaction.
   //
-  // See litmus test above for deciding between FAILED_PRECONDITION,
-  // ABORTED, and UNAVAILABLE.
-  PW_STATUS_ABORTED = 10,  // Use Status::ABORTED in C++
+  // See the guidelines above for deciding between `FailedPrecondition`,
+  // `Aborted`, and `Unavailable`.
+  PW_STATUS_ABORTED = 10,  // Use Status::Aborted() in C++
 
-  // Operation tried to iterate past the valid input range.  E.g. seeking or
-  // reading past end of file.
+  // OutOfRange (gRPC code "OUT_OF_RANGE") indicates the operation was
+  // attempted past the valid range, such as seeking or reading past an
+  // end-of-file.
   //
-  // Unlike INVALID_ARGUMENT, this error indicates a problem that may
+  // Unlike `InvalidArgument`, this error indicates a problem that may
   // be fixed if the system state changes. For example, a 32-bit file
-  // system will generate INVALID_ARGUMENT if asked to read at an
+  // system will generate `InvalidArgument` if asked to read at an
   // offset that is not in the range [0,2^32-1], but it will generate
-  // OUT_OF_RANGE if asked to read from an offset past the current
+  // `OutOfRange` if asked to read from an offset past the current
   // file size.
   //
-  // There is a fair bit of overlap between FAILED_PRECONDITION and
-  // OUT_OF_RANGE.  We recommend using OUT_OF_RANGE (the more specific
+  // There is a fair bit of overlap between `FailedPrecondition` and
+  // `OutOfRange`.  We recommend using `OutOfRange` (the more specific
   // error) when it applies so that callers who are iterating through
-  // a space can easily look for an OUT_OF_RANGE error to detect when
+  // a space can easily look for an `OutOfRange` error to detect when
   // they are done.
-  PW_STATUS_OUT_OF_RANGE = 11,  // Use Status::OUT_OF_RANGE in C++
+  PW_STATUS_OUT_OF_RANGE = 11,  // Use Status::OutOfRange() in C++
 
-  // Operation is not implemented or not supported/enabled in this service.
-  PW_STATUS_UNIMPLEMENTED = 12,  // Use Status::UNIMPLEMENTED in C++
+  // Unimplemented (gRPC code "UNIMPLEMENTED") indicates the operation is not
+  // implemented or supported in this service. In this case, the operation
+  // should not be re-attempted.
+  PW_STATUS_UNIMPLEMENTED = 12,  // Use Status::Unimplemented() in C++
 
-  // Internal errors.  Means some invariants expected by underlying
-  // system has been broken.  If you see one of these errors,
-  // something is very broken.
-  PW_STATUS_INTERNAL = 13,  // Use Status::INTERNAL in C++
+  // Internal (gRPC code "INTERNAL") indicates an internal error has occurred
+  // and some invariants expected by the underlying system have not been
+  // satisfied. This error code is reserved for serious errors.
+  PW_STATUS_INTERNAL = 13,  // Use Status::Internal() in C++
 
-  // The service is currently unavailable.  This is a most likely a
-  // transient condition and may be corrected by retrying with
-  // a backoff.
+  // Unavailable (gRPC code "UNAVAILABLE") indicates the service is currently
+  // unavailable and that this is most likely a transient condition. An error
+  // such as this can be corrected by retrying with a backoff scheme. Note that
+  // it is not always safe to retry non-idempotent operations.
   //
-  // See litmus test above for deciding between FAILED_PRECONDITION,
-  // ABORTED, and UNAVAILABLE.
-  PW_STATUS_UNAVAILABLE = 14,  // Use Status::UNAVAILABLE in C++
+  // See the guidelines above for deciding between `FailedPrecondition`,
+  // `Aborted`, and `Unavailable`.
+  PW_STATUS_UNAVAILABLE = 14,  // Use Status::Unavailable() in C++
 
-  // Unrecoverable data loss or corruption.
-  PW_STATUS_DATA_LOSS = 15,  // Use Status::DATA_LOSS in C++
+  // DataLoss (gRPC code "DATA_LOSS") indicates that unrecoverable data loss or
+  // corruption has occurred. As this error is serious, proper alerting should
+  // be attached to errors such as this.
+  PW_STATUS_DATA_LOSS = 15,  // Use Status::DataLoss() in C++
 
-  // An extra enum entry to prevent people from writing code that
-  // fails to compile when a new code is added.
+  // Unauthenticated (gRPC code "UNAUTHENTICATED") indicates that the request
+  // does not have valid authentication credentials for the operation. Correct
+  // the authentication and try again.
+  PW_STATUS_UNAUTHENTICATED = 16,  // Use Status::Unauthenticated() in C++
+
+  // NOTE: this error code entry should not be used and you should not rely on
+  // its value, which may change.
   //
-  // Nobody should ever reference this enumeration entry. In particular,
-  // if you write C++ code that switches on this enumeration, add a default:
-  // case instead of a case that mentions this enumeration entry.
-  //
-  // Nobody should rely on the value listed here. It may change in the future.
+  // The purpose of this enumerated value is to force people who handle status
+  // codes with `switch()` statements to *not* simply enumerate all possible
+  // values, but instead provide a "default:" case. Providing such a default
+  // case ensures that code will compile when new codes are added.
   PW_STATUS_DO_NOT_USE_RESERVED_FOR_FUTURE_EXPANSION_USE_DEFAULT_IN_SWITCH_INSTEAD_,
 } pw_Status;  // Use pw::Status in C++
 
@@ -159,17 +180,54 @@ const char* pw_StatusString(pw_Status status);
 
 }  // extern "C"
 
+// This header violates the Pigweed style guide! It declares constants that use
+// macro naming style, rather than constant naming style (kConstant). This is
+// done for readability and for consistency with Google's standard status codes
+// (e.g. as in gRPC).
+//
+// The problem is that the status code names might overlap with macro
+// definitions. To workaround this, this header undefines any macros with these
+// names.
+//
+// If your project relies on a macro with one of these names (e.g. INTERNAL),
+// make sure it is included after status.h so that the macro is defined.
+//
+// TODO(pwbug/268): Remove these #undefs after removing the names that violate
+//     the style guide.
+#undef OK
+#undef CANCELLED
+#undef UNKNOWN
+#undef INVALID_ARGUMENT
+#undef DEADLINE_EXCEEDED
+#undef NOT_FOUND
+#undef ALREADY_EXISTS
+#undef PERMISSION_DENIED
+#undef UNAUTHENTICATED
+#undef RESOURCE_EXHAUSTED
+#undef FAILED_PRECONDITION
+#undef ABORTED
+#undef OUT_OF_RANGE
+#undef UNIMPLEMENTED
+#undef INTERNAL
+#undef UNAVAILABLE
+#undef DATA_LOSS
+
 namespace pw {
 
 // The Status class is a thin, zero-cost abstraction around the pw_Status enum.
-// It initializes to Status::OK by default and adds ok() and str() methods.
+// It initializes to Status::Ok() by default and adds ok() and str() methods.
 // Implicit conversions are permitted between pw_Status and pw::Status.
 class Status {
  public:
   using Code = pw_Status;
 
   // All of the pw_Status codes are available in the Status class as, e.g.
-  // pw::Status::OK or pw::Status::OUT_OF_RANGE.
+  // pw::Status::Ok() or pw::Status::OutOfRange().
+  //
+  // These aliases are DEPRECATED -- prefer using the helper functions below.
+  // For example, change Status::CANCELLED to Status::Cancelled().
+  //
+  // TODO(pwbug/268): Migrate to the helper functions and remove these aliases.
   static constexpr Code OK = PW_STATUS_OK;
   static constexpr Code CANCELLED = PW_STATUS_CANCELLED;
   static constexpr Code UNKNOWN = PW_STATUS_UNKNOWN;
@@ -188,25 +246,144 @@ class Status {
   static constexpr Code UNAVAILABLE = PW_STATUS_UNAVAILABLE;
   static constexpr Code DATA_LOSS = PW_STATUS_DATA_LOSS;
 
+  // Functions that create a Status with the specified code.
+  // clang-format off
+  [[nodiscard]] static constexpr Status Ok() {
+    return PW_STATUS_OK;
+  }
+  [[nodiscard]] static constexpr Status Cancelled() {
+    return PW_STATUS_CANCELLED;
+  }
+  [[nodiscard]] static constexpr Status Unknown() {
+    return PW_STATUS_UNKNOWN;
+  }
+  [[nodiscard]] static constexpr Status InvalidArgument() {
+    return PW_STATUS_INVALID_ARGUMENT;
+  }
+  [[nodiscard]] static constexpr Status DeadlineExceeded() {
+    return PW_STATUS_DEADLINE_EXCEEDED;
+  }
+  [[nodiscard]] static constexpr Status NotFound() {
+    return PW_STATUS_NOT_FOUND;
+  }
+  [[nodiscard]] static constexpr Status AlreadyExists() {
+    return PW_STATUS_ALREADY_EXISTS;
+  }
+  [[nodiscard]] static constexpr Status PermissionDenied() {
+    return PW_STATUS_PERMISSION_DENIED;
+  }
+  [[nodiscard]] static constexpr Status ResourceExhausted() {
+    return PW_STATUS_RESOURCE_EXHAUSTED;
+  }
+  [[nodiscard]] static constexpr Status FailedPrecondition() {
+    return PW_STATUS_FAILED_PRECONDITION;
+  }
+  [[nodiscard]] static constexpr Status Aborted() {
+    return PW_STATUS_ABORTED;
+  }
+  [[nodiscard]] static constexpr Status OutOfRange() {
+    return PW_STATUS_OUT_OF_RANGE;
+  }
+  [[nodiscard]] static constexpr Status Unimplemented() {
+    return PW_STATUS_UNIMPLEMENTED;
+  }
+  [[nodiscard]] static constexpr Status Internal() {
+    return PW_STATUS_INTERNAL;
+  }
+  [[nodiscard]] static constexpr Status Unavailable() {
+    return PW_STATUS_UNAVAILABLE;
+  }
+  [[nodiscard]] static constexpr Status DataLoss() {
+    return PW_STATUS_DATA_LOSS;
+  }
+  [[nodiscard]] static constexpr Status Unauthenticated() {
+    return PW_STATUS_UNAUTHENTICATED;
+  }
+  // clang-format on
+
   // Statuses are created with a Status::Code.
-  constexpr Status(Code code = OK) : code_(code) {}
+  constexpr Status(Code code = PW_STATUS_OK) : code_(code) {}
 
   constexpr Status(const Status&) = default;
   constexpr Status& operator=(const Status&) = default;
 
-  // Status implicitly converts to a Status::Code.
-  constexpr operator Code() const { return code_; }
+  // Returns the Status::Code (pw_Status) for this Status.
+  constexpr Code code() const { return code_; }
 
-  // True if the status is Status::OK.
-  constexpr bool ok() const { return code_ == OK; }
+  // True if the status is Status::Ok().
+  [[nodiscard]] constexpr bool ok() const { return code_ == PW_STATUS_OK; }
+
+  // Functions for checking which status this is.
+  [[nodiscard]] constexpr bool IsCancelled() const {
+    return code_ == PW_STATUS_CANCELLED;
+  }
+  [[nodiscard]] constexpr bool IsUnknown() const {
+    return code_ == PW_STATUS_UNKNOWN;
+  }
+  [[nodiscard]] constexpr bool IsInvalidArgument() const {
+    return code_ == PW_STATUS_INVALID_ARGUMENT;
+  }
+  [[nodiscard]] constexpr bool IsDeadlineExceeded() const {
+    return code_ == PW_STATUS_DEADLINE_EXCEEDED;
+  }
+  [[nodiscard]] constexpr bool IsNotFound() const {
+    return code_ == PW_STATUS_NOT_FOUND;
+  }
+  [[nodiscard]] constexpr bool IsAlreadyExists() const {
+    return code_ == PW_STATUS_ALREADY_EXISTS;
+  }
+  [[nodiscard]] constexpr bool IsPermissionDenied() const {
+    return code_ == PW_STATUS_PERMISSION_DENIED;
+  }
+  [[nodiscard]] constexpr bool IsResourceExhausted() const {
+    return code_ == PW_STATUS_RESOURCE_EXHAUSTED;
+  }
+  [[nodiscard]] constexpr bool IsFailedPrecondition() const {
+    return code_ == PW_STATUS_FAILED_PRECONDITION;
+  }
+  [[nodiscard]] constexpr bool IsAborted() const {
+    return code_ == PW_STATUS_ABORTED;
+  }
+  [[nodiscard]] constexpr bool IsOutOfRange() const {
+    return code_ == PW_STATUS_OUT_OF_RANGE;
+  }
+  [[nodiscard]] constexpr bool IsUnimplemented() const {
+    return code_ == PW_STATUS_UNIMPLEMENTED;
+  }
+  [[nodiscard]] constexpr bool IsInternal() const {
+    return code_ == PW_STATUS_INTERNAL;
+  }
+  [[nodiscard]] constexpr bool IsUnavailable() const {
+    return code_ == PW_STATUS_UNAVAILABLE;
+  }
+  [[nodiscard]] constexpr bool IsDataLoss() const {
+    return code_ == PW_STATUS_DATA_LOSS;
+  }
+  [[nodiscard]] constexpr bool IsUnauthenticated() const {
+    return code_ == PW_STATUS_UNAUTHENTICATED;
+  }
 
   // Returns a null-terminated string representation of the Status.
-  const char* str() const { return pw_StatusString(code_); }
+  [[nodiscard]] const char* str() const { return pw_StatusString(code_); }
 
  private:
   Code code_;
 };
 
+constexpr bool operator==(const Status& lhs, const Status& rhs) {
+  return lhs.code() == rhs.code();
+}
+
+constexpr bool operator!=(const Status& lhs, const Status& rhs) {
+  return lhs.code() != rhs.code();
+}
+
 }  // namespace pw
+
+// Create a C++ overload of pw_StatusString so that it supports pw::Status in
+// addition to pw_Status.
+inline const char* pw_StatusString(pw::Status status) {
+  return pw_StatusString(status.code());
+}
 
 #endif  // __cplusplus

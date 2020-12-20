@@ -34,20 +34,21 @@ TEST(PrefixedEntryRingBuffer, NoBuffer) {
   size_t count;
 
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.SetBuffer(span<byte>(nullptr, 10u)), Status::INVALID_ARGUMENT);
-  EXPECT_EQ(ring.SetBuffer(span(buf, 0u)), Status::INVALID_ARGUMENT);
+  EXPECT_EQ(ring.SetBuffer(std::span<byte>(nullptr, 10u)),
+            Status::InvalidArgument());
+  EXPECT_EQ(ring.SetBuffer(std::span(buf, 0u)), Status::InvalidArgument());
   EXPECT_EQ(ring.FrontEntryDataSizeBytes(), 0u);
 
-  EXPECT_EQ(ring.PushBack(buf), Status::FAILED_PRECONDITION);
+  EXPECT_EQ(ring.PushBack(buf), Status::FailedPrecondition());
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.PeekFront(buf, &count), Status::FAILED_PRECONDITION);
+  EXPECT_EQ(ring.PeekFront(buf, &count), Status::FailedPrecondition());
   EXPECT_EQ(count, 0u);
   EXPECT_EQ(ring.EntryCount(), 0u);
   EXPECT_EQ(ring.PeekFrontWithPreamble(buf, &count),
-            Status::FAILED_PRECONDITION);
+            Status::FailedPrecondition());
   EXPECT_EQ(count, 0u);
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.PopFront(), Status::FAILED_PRECONDITION);
+  EXPECT_EQ(ring.PopFront(), Status::FailedPrecondition());
   EXPECT_EQ(ring.EntryCount(), 0u);
 }
 
@@ -82,22 +83,23 @@ void SingleEntryWriteReadTest(bool user_data) {
   // out and happen to see a previous value.
   size_t read_size = 500U;
 
-  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::OK);
+  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::Ok());
 
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.PopFront(), Status::OUT_OF_RANGE);
+  EXPECT_EQ(ring.PopFront(), Status::OutOfRange());
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.PushBack(span(single_entry_data, 0u)),
-            Status::INVALID_ARGUMENT);
+  EXPECT_EQ(ring.PushBack(std::span(single_entry_data, 0u)),
+            Status::InvalidArgument());
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.PushBack(span(single_entry_data, sizeof(test_buffer) + 5)),
-            Status::OUT_OF_RANGE);
+  EXPECT_EQ(
+      ring.PushBack(std::span(single_entry_data, sizeof(test_buffer) + 5)),
+      Status::OutOfRange());
   EXPECT_EQ(ring.EntryCount(), 0u);
-  EXPECT_EQ(ring.PeekFront(read_buffer, &read_size), Status::OUT_OF_RANGE);
+  EXPECT_EQ(ring.PeekFront(read_buffer, &read_size), Status::OutOfRange());
   EXPECT_EQ(read_size, 0u);
   read_size = 500U;
   EXPECT_EQ(ring.PeekFrontWithPreamble(read_buffer, &read_size),
-            Status::OUT_OF_RANGE);
+            Status::OutOfRange());
   EXPECT_EQ(read_size, 0u);
 
   size_t user_preamble_bytes = (user_data ? 1 : 0);
@@ -112,33 +114,34 @@ void SingleEntryWriteReadTest(bool user_data) {
     ASSERT_EQ(ring.FrontEntryDataSizeBytes(), 0u);
     ASSERT_EQ(ring.FrontEntryTotalSizeBytes(), 0u);
 
-    ASSERT_EQ(ring.PushBack(span(single_entry_data, data_size), byte(i)),
-              Status::OK);
+    ASSERT_EQ(ring.PushBack(std::span(single_entry_data, data_size), byte(i)),
+              Status::Ok());
     ASSERT_EQ(ring.FrontEntryDataSizeBytes(), data_size);
     ASSERT_EQ(ring.FrontEntryTotalSizeBytes(), single_entry_total_size);
 
     read_size = 500U;
-    ASSERT_EQ(ring.PeekFront(read_buffer, &read_size), Status::OK);
+    ASSERT_EQ(ring.PeekFront(read_buffer, &read_size), Status::Ok());
     ASSERT_EQ(read_size, data_size);
 
-    // ASSERT_THAT(span(expect_buffer).last(data_size),
-    //            testing::ElementsAreArray(span(read_buffer, data_size)));
-    ASSERT_EQ(
-        memcmp(
-            span(expect_buffer).last(data_size).data(), read_buffer, data_size),
-        0);
+    // ASSERT_THAT(std::span(expect_buffer).last(data_size),
+    //            testing::ElementsAreArray(std::span(read_buffer, data_size)));
+    ASSERT_EQ(memcmp(std::span(expect_buffer).last(data_size).data(),
+                     read_buffer,
+                     data_size),
+              0);
 
     read_size = 500U;
-    ASSERT_EQ(ring.PeekFrontWithPreamble(read_buffer, &read_size), Status::OK);
+    ASSERT_EQ(ring.PeekFrontWithPreamble(read_buffer, &read_size),
+              Status::Ok());
     ASSERT_EQ(read_size, single_entry_total_size);
-    ASSERT_EQ(ring.PopFront(), Status::OK);
+    ASSERT_EQ(ring.PopFront(), Status::Ok());
 
     if (user_data) {
       expect_buffer[0] = byte(i);
     }
 
-    // ASSERT_THAT(span(expect_buffer),
-    //            testing::ElementsAreArray(span(read_buffer)));
+    // ASSERT_THAT(std::span(expect_buffer),
+    //            testing::ElementsAreArray(std::span(read_buffer)));
     ASSERT_EQ(memcmp(expect_buffer, read_buffer, single_entry_total_size), 0);
   }
 }
@@ -165,7 +168,7 @@ void CountingUpWriteReadTest() {
   PrefixedEntryRingBuffer ring(user_data);
   byte test_buffer[single_entry_test_buffer_size];
 
-  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::OK);
+  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::Ok());
   EXPECT_EQ(ring.EntryCount(), 0u);
 
   constexpr size_t data_size = sizeof(single_entry_data) - (user_data ? 1 : 0);
@@ -179,7 +182,7 @@ void CountingUpWriteReadTest() {
     for (j = 0; j < kSingleEntryCycles; j++) {
       memset(write_buffer, j + seed, sizeof(write_buffer));
 
-      ASSERT_EQ(ring.PushBack(write_buffer), Status::OK);
+      ASSERT_EQ(ring.PushBack(write_buffer), Status::Ok());
 
       size_t expected_count = (j < kCountingUpMaxExpectedEntries)
                                   ? j + 1
@@ -193,11 +196,11 @@ void CountingUpWriteReadTest() {
       byte read_buffer[sizeof(write_buffer)];
       size_t read_size;
       memset(write_buffer, fill_val + j, sizeof(write_buffer));
-      ASSERT_EQ(ring.PeekFront(read_buffer, &read_size), Status::OK);
+      ASSERT_EQ(ring.PeekFront(read_buffer, &read_size), Status::Ok());
 
       ASSERT_EQ(memcmp(write_buffer, read_buffer, data_size), 0);
 
-      ASSERT_EQ(ring.PopFront(), Status::OK);
+      ASSERT_EQ(ring.PopFront(), Status::Ok());
     }
   }
 }
@@ -219,13 +222,13 @@ void SingleEntryWriteReadWithSectionWriterTest(bool user_data) {
   PrefixedEntryRingBuffer ring(user_data);
   byte test_buffer[single_entry_test_buffer_size];
 
-  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::OK);
+  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::Ok());
 
-  auto output = [](span<const byte> src) -> Status {
+  auto output = [](std::span<const byte> src) -> Status {
     for (byte b : src) {
       read_buffer.push_back(b);
     }
-    return Status::OK;
+    return Status::Ok();
   };
 
   size_t user_preamble_bytes = (user_data ? 1 : 0);
@@ -240,24 +243,24 @@ void SingleEntryWriteReadWithSectionWriterTest(bool user_data) {
     ASSERT_EQ(ring.FrontEntryDataSizeBytes(), 0u);
     ASSERT_EQ(ring.FrontEntryTotalSizeBytes(), 0u);
 
-    ASSERT_EQ(ring.PushBack(span(single_entry_data, data_size), byte(i)),
-              Status::OK);
+    ASSERT_EQ(ring.PushBack(std::span(single_entry_data, data_size), byte(i)),
+              Status::Ok());
     ASSERT_EQ(ring.FrontEntryDataSizeBytes(), data_size);
     ASSERT_EQ(ring.FrontEntryTotalSizeBytes(), single_entry_total_size);
 
     read_buffer.clear();
-    ASSERT_EQ(ring.PeekFront(output), Status::OK);
+    ASSERT_EQ(ring.PeekFront(output), Status::Ok());
     ASSERT_EQ(read_buffer.size(), data_size);
 
-    ASSERT_EQ(memcmp(span(expect_buffer).last(data_size).data(),
+    ASSERT_EQ(memcmp(std::span(expect_buffer).last(data_size).data(),
                      read_buffer.data(),
                      data_size),
               0);
 
     read_buffer.clear();
-    ASSERT_EQ(ring.PeekFrontWithPreamble(output), Status::OK);
+    ASSERT_EQ(ring.PeekFrontWithPreamble(output), Status::Ok());
     ASSERT_EQ(read_buffer.size(), single_entry_total_size);
-    ASSERT_EQ(ring.PopFront(), Status::OK);
+    ASSERT_EQ(ring.PopFront(), Status::Ok());
 
     if (user_data) {
       expect_buffer[0] = byte(i);
@@ -290,11 +293,11 @@ void DeringTest(bool preload) {
   PrefixedEntryRingBuffer ring;
 
   byte test_buffer[kTestBufferSize];
-  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::OK);
+  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::Ok());
 
   // Entry data is entry size - preamble (single byte in this case).
   byte single_entry_buffer[kEntrySizeBytes - 1u];
-  auto entry_data = span(single_entry_buffer);
+  auto entry_data = std::span(single_entry_buffer);
   size_t i;
 
   // TODO(pwbug/196): Increase this to 500 once we have a way to detect targets
@@ -333,7 +336,7 @@ void DeringTest(bool preload) {
     EXPECT_EQ(ring.EntryCount(), kTotalEntryCount);
     EXPECT_EQ(expected_result.size(), ring.TotalUsedBytes());
 
-    ASSERT_EQ(ring.Dering(), Status::OK);
+    ASSERT_EQ(ring.Dering(), Status::Ok());
 
     // Check values after doing the dering.
     EXPECT_EQ(ring.EntryCount(), kTotalEntryCount);
@@ -341,15 +344,15 @@ void DeringTest(bool preload) {
 
     // Read out the entries of the ring buffer.
     actual_result.clear();
-    auto output = [](span<const byte> src) -> Status {
+    auto output = [](std::span<const byte> src) -> Status {
       for (byte b : src) {
         actual_result.push_back(b);
       }
-      return Status::OK;
+      return Status::Ok();
     };
     while (ring.EntryCount()) {
-      ASSERT_EQ(ring.PeekFrontWithPreamble(output), Status::OK);
-      ASSERT_EQ(ring.PopFront(), Status::OK);
+      ASSERT_EQ(ring.PeekFrontWithPreamble(output), Status::Ok());
+      ASSERT_EQ(ring.PopFront(), Status::Ok());
     }
 
     // Ensure the actual result out of the ring buffer matches our manually
@@ -374,7 +377,7 @@ Status PushBack(PrefixedEntryRingBuffer& ring, T element) {
     T item;
   } aliased;
   aliased.item = element;
-  return ring.PushBack(span(aliased.buffer));
+  return ring.PushBack(aliased.buffer);
 }
 
 template <typename T>
@@ -384,7 +387,7 @@ Status TryPushBack(PrefixedEntryRingBuffer& ring, T element) {
     T item;
   } aliased;
   aliased.item = element;
-  return ring.TryPushBack(span(aliased.buffer));
+  return ring.TryPushBack(aliased.buffer);
 }
 
 template <typename T>
@@ -394,8 +397,7 @@ T PeekFront(PrefixedEntryRingBuffer& ring) {
     T item;
   } aliased;
   size_t bytes_read = 0;
-  PW_CHECK_INT_EQ(ring.PeekFront(span(aliased.buffer), &bytes_read),
-                  Status::OK);
+  PW_CHECK_OK(ring.PeekFront(aliased.buffer, &bytes_read));
   PW_CHECK_INT_EQ(bytes_read, sizeof(T));
   return aliased.item;
 }
@@ -403,7 +405,7 @@ T PeekFront(PrefixedEntryRingBuffer& ring) {
 TEST(PrefixedEntryRingBuffer, TryPushBack) {
   PrefixedEntryRingBuffer ring;
   byte test_buffer[kTestBufferSize];
-  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::OK);
+  EXPECT_EQ(ring.SetBuffer(test_buffer), Status::Ok());
 
   // Fill up the ring buffer with a constant.
   int total_items = 0;
@@ -412,7 +414,7 @@ TEST(PrefixedEntryRingBuffer, TryPushBack) {
     if (status.ok()) {
       total_items++;
     } else {
-      EXPECT_EQ(status, Status::RESOURCE_EXHAUSTED);
+      EXPECT_EQ(status, Status::ResourceExhausted());
       break;
     }
   }
@@ -420,13 +422,13 @@ TEST(PrefixedEntryRingBuffer, TryPushBack) {
 
   // Should be unable to push more items.
   for (int i = 0; i < total_items; ++i) {
-    EXPECT_EQ(TryPushBack<int>(ring, 100), Status::RESOURCE_EXHAUSTED);
+    EXPECT_EQ(TryPushBack<int>(ring, 100), Status::ResourceExhausted());
     EXPECT_EQ(PeekFront<int>(ring), 5);
   }
 
   // Fill up the ring buffer with a constant.
   for (int i = 0; i < total_items; ++i) {
-    EXPECT_EQ(PushBack<int>(ring, 100), Status::OK);
+    EXPECT_EQ(PushBack<int>(ring, 100), Status::Ok());
   }
   EXPECT_EQ(PeekFront<int>(ring), 100);
 }

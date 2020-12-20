@@ -20,17 +20,54 @@
 
 #include <cstring>
 
-#include "pw_polyfill/language_features.h"  // static_assert
 #include "pw_tokenizer_private/encode_args.h"
 
 namespace pw {
 namespace tokenizer {
+namespace {
 
-extern "C" void _pw_TokenizeToBuffer(void* buffer,
-                                     size_t* buffer_size_bytes,
-                                     pw_TokenizerStringToken token,
-                                     pw_TokenizerArgTypes types,
-                                     ...) {
+// Store metadata about this compilation's string tokenization in the ELF.
+//
+// The tokenizer metadata will not go into the on-device executable binary code.
+// This metadata will be present in the ELF file's .pw_tokenizer.info section,
+// from which the host-side tooling (Python, Java, etc.) can understand how to
+// decode tokenized strings for the given binary. Only attributes that affect
+// the decoding process are recorded.
+//
+// Tokenizer metadata is stored in an array of key-value pairs. Each Metadata
+// object is 32 bytes: a 24-byte string and an 8-byte value. Metadata structs
+// may be parsed in Python with the struct format '24s<Q'.
+PW_PACKED(struct) Metadata {
+  char name[24];   // name of the metadata field
+  uint64_t value;  // value of the field
+};
+
+static_assert(sizeof(Metadata) == 32);
+
+// Store tokenization metadata in its own section. Mach-O files are not
+// supported by pw_tokenizer, but a short, Mach-O compatible section name is
+// used on macOS so that this file can at least compile.
+#ifdef __APPLE__
+#define PW_TOKENIZER_INFO_SECTION PW_KEEP_IN_SECTION(".pw_tokenizer")
+#else
+#define PW_TOKENIZER_INFO_SECTION PW_KEEP_IN_SECTION(".pw_tokenizer.info")
+#endif  // __APPLE__
+
+constexpr Metadata metadata[] PW_TOKENIZER_INFO_SECTION = {
+    {"hash_length_bytes", PW_TOKENIZER_CFG_C_HASH_LENGTH},
+    {"sizeof_long", sizeof(long)},            // %l conversion specifier
+    {"sizeof_intmax_t", sizeof(intmax_t)},    // %j conversion specifier
+    {"sizeof_size_t", sizeof(size_t)},        // %z conversion specifier
+    {"sizeof_ptrdiff_t", sizeof(ptrdiff_t)},  // %t conversion specifier
+};
+
+}  // namespace
+
+extern "C" void _pw_tokenizer_ToBuffer(void* buffer,
+                                       size_t* buffer_size_bytes,
+                                       Token token,
+                                       _pw_tokenizer_ArgTypes types,
+                                       ...) {
   if (*buffer_size_bytes < sizeof(token)) {
     *buffer_size_bytes = 0;
     return;
@@ -40,20 +77,20 @@ extern "C" void _pw_TokenizeToBuffer(void* buffer,
 
   va_list args;
   va_start(args, types);
-  const size_t encoded_bytes =
-      EncodeArgs(types,
-                 args,
-                 span<uint8_t>(static_cast<uint8_t*>(buffer) + sizeof(token),
-                               *buffer_size_bytes - sizeof(token)));
+  const size_t encoded_bytes = EncodeArgs(
+      types,
+      args,
+      std::span<uint8_t>(static_cast<uint8_t*>(buffer) + sizeof(token),
+                         *buffer_size_bytes - sizeof(token)));
   va_end(args);
 
   *buffer_size_bytes = sizeof(token) + encoded_bytes;
 }
 
-extern "C" void _pw_TokenizeToCallback(
+extern "C" void _pw_tokenizer_ToCallback(
     void (*callback)(const uint8_t* encoded_message, size_t size_bytes),
-    pw_TokenizerStringToken token,
-    pw_TokenizerArgTypes types,
+    Token token,
+    _pw_tokenizer_ArgTypes types,
     ...) {
   EncodedMessage encoded;
   encoded.token = token;

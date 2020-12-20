@@ -19,9 +19,8 @@ These checks assume that they are running in a preconfigured Python environment.
 import logging
 import os
 from pathlib import Path
-import re
 import sys
-from typing import List
+from typing import Callable, Iterable, List, Set, Tuple
 
 try:
     import pw_presubmit
@@ -32,7 +31,9 @@ except ImportError:
         os.path.abspath(__file__))))
     import pw_presubmit
 
-from pw_presubmit import call, filter_paths, git_repo
+from pw_presubmit import call, filter_paths
+from pw_presubmit.git_repo import python_packages_containing, list_files
+from pw_presubmit.git_repo import PythonPackage
 
 _LOG = logging.getLogger(__name__)
 
@@ -41,22 +42,34 @@ def run_module(*args, **kwargs):
     return call('python', '-m', *args, **kwargs)
 
 
+TEST_PATTERNS = ('*_test.py', )
+
+
 @filter_paths(endswith='.py')
-def test_python_packages(ctx: pw_presubmit.PresubmitContext):
-    packages: List[Path] = []
+def test_python_packages(ctx: pw_presubmit.PresubmitContext,
+                         patterns: Iterable[str] = TEST_PATTERNS) -> None:
+    """Finds and runs test files in Python package directories.
+
+    Finds the Python packages containing the affected paths, then searches
+    within that package for test files. All files matching the provided patterns
+    are executed with Python.
+    """
+    packages: List[PythonPackage] = []
     for repo in ctx.repos:
-        packages += git_repo.find_python_packages(ctx.paths, repo=repo)
+        packages += python_packages_containing(ctx.paths, repo=repo)[0]
 
     if not packages:
         _LOG.info('No Python packages were found.')
         return
 
     for package in packages:
-        call('python', package / 'setup.py', 'test', cwd=package)
+        for test in list_files(pathspecs=tuple(patterns),
+                               repo_path=package.root):
+            call('python', test)
 
 
 @filter_paths(endswith='.py')
-def pylint(ctx: pw_presubmit.PresubmitContext):
+def pylint(ctx: pw_presubmit.PresubmitContext) -> None:
     disable_checkers = [
         # BUG(pwbug/22): Hanging indent check conflicts with YAPF 0.29. For
         # now, use YAPF's version even if Pylint is doing the correct thing
@@ -75,25 +88,53 @@ def pylint(ctx: pw_presubmit.PresubmitContext):
     )
 
 
-_SETUP_PY = re.compile(r'(?:.+/)?setup\.py')
-
-
 @filter_paths(endswith='.py')
-def mypy(ctx: pw_presubmit.PresubmitContext):
+def mypy(ctx: pw_presubmit.PresubmitContext) -> None:
+    """Runs mypy on all paths and their packages."""
+    packages: List[PythonPackage] = []
+    other_files: List[Path] = []
+
+    for repo, paths in ctx.paths_by_repo().items():
+        new_packages, files = python_packages_containing(paths, repo=repo)
+        packages += new_packages
+        other_files += files
+
+        for package in new_packages:
+            other_files += package.other_files
+
+    # Under some circumstances, mypy cannot check multiple Python files with the
+    # same module name. Group filenames so that no duplicates occur in the same
+    # mypy invocation. Also, omit setup.py from mypy checks.
+    filename_sets: List[Set[str]] = [set()]
+    path_sets: List[List[Path]] = [list(p.package for p in packages)]
+
+    for path in (p for p in other_files if p.name != 'setup.py'):
+        for filenames, paths in zip(filename_sets, path_sets):
+            if path.name not in filenames:
+                paths.append(path)
+                filenames.add(path.name)
+                break
+        else:
+            path_sets.append([path])
+            filename_sets.append({path.name})
+
     env = os.environ.copy()
     # Use this environment variable to force mypy to colorize output.
     # See https://github.com/python/mypy/issues/7771
     env['MYPY_FORCE_COLOR'] = '1'
 
-    run_module(
-        'mypy',
-        *(p for p in ctx.paths if not _SETUP_PY.fullmatch(p.as_posix())),
-        '--pretty',
-        '--color-output',
-        # TODO(pwbug/146): Some imports from installed packages fail. These
-        # imports should be fixed and this option removed.
-        '--ignore-missing-imports',
-        env=env)
+    for paths in path_sets:
+        run_module(
+            'mypy',
+            *paths,
+            '--pretty',
+            '--color-output',
+            '--show-error-codes',
+            # TODO(pwbug/146): Some imports from installed packages fail. These
+            # imports should be fixed and this option removed. See
+            # https://mypy.readthedocs.io/en/stable/installed_packages.html
+            '--ignore-missing-imports',
+            env=env)
 
 
 _ALL_CHECKS = (
@@ -103,7 +144,8 @@ _ALL_CHECKS = (
 )
 
 
-def all_checks(endswith='.py', **filter_paths_args):
+def all_checks(endswith: str = '.py',
+               **filter_paths_args) -> Tuple[Callable, ...]:
     return tuple(
         filter_paths(endswith=endswith, **filter_paths_args)(function)
         for function in _ALL_CHECKS)

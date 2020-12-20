@@ -17,17 +17,17 @@
 #include <cstdint>
 
 #include "pw_assert/assert.h"
-#include "pw_rpc/channel.h"
+#include "pw_rpc/internal/channel.h"
 
 namespace pw::rpc {
 
-class Server;
 class ServerContext;
+class Service;
 
 namespace internal {
 
 class Method;
-class Service;
+class Server;
 
 // Collects information for an ongoing RPC being processed by the server.
 // The Server creates a ServerCall object to represent a method invocation. The
@@ -37,8 +37,6 @@ class Service;
 // interface to the internal::ServerCall.
 class ServerCall {
  public:
-  uint32_t channel_id() const { return channel().id(); }
-
   constexpr ServerCall()
       : server_(nullptr),
         channel_(nullptr),
@@ -47,7 +45,7 @@ class ServerCall {
 
   constexpr ServerCall(Server& server,
                        Channel& channel,
-                       internal::Service& service,
+                       Service& service,
                        const internal::Method& method)
       : server_(&server),
         channel_(&channel),
@@ -70,7 +68,7 @@ class ServerCall {
     return *channel_;
   }
 
-  internal::Service& service() const {
+  Service& service() const {
     PW_DCHECK_NOTNULL(service_);
     return *service_;
   }
@@ -83,7 +81,7 @@ class ServerCall {
  private:
   Server* server_;
   Channel* channel_;
-  internal::Service* service_;
+  Service* service_;
   const internal::Method* method_;
 };
 

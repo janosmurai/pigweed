@@ -39,17 +39,17 @@ struct CustomType {
   CustomType& operator=(const CustomType&) = delete;
 };
 
-StatusWithSize ToString(const CustomType&, const span<char>& buffer) {
+StatusWithSize ToString(const CustomType&, std::span<char> buffer) {
   int result =
       std::snprintf(buffer.data(), buffer.size(), CustomType::kToString);
   if (result < 0) {
-    return StatusWithSize::UNKNOWN;
+    return StatusWithSize::Unknown();
   }
   if (static_cast<size_t>(result) < buffer.size()) {
     return StatusWithSize(result);
   }
-  return StatusWithSize(Status::RESOURCE_EXHAUSTED,
-                        buffer.empty() ? 0u : buffer.size() - 1);
+  return StatusWithSize::ResourceExhausted(buffer.empty() ? 0u
+                                                          : buffer.size() - 1);
 }
 
 namespace {
@@ -101,18 +101,18 @@ TEST(ToString, ScopedEnum) {
 
   auto result = ToString(MyEnum::kLuckyNumber, buffer);
   EXPECT_EQ(1u, result.size());
-  EXPECT_EQ(Status::OK, result.status());
+  EXPECT_EQ(Status::Ok(), result.status());
   EXPECT_STREQ("8", buffer);
 }
 
 TEST(ToString, Integer_EmptyBuffer_WritesNothing) {
-  auto result = ToString(-1234, span(buffer, 0));
+  auto result = ToString(-1234, std::span(buffer, 0));
   EXPECT_EQ(0u, result.size());
-  EXPECT_EQ(Status::RESOURCE_EXHAUSTED, result.status());
+  EXPECT_EQ(Status::ResourceExhausted(), result.status());
 }
 
 TEST(ToString, Integer_BufferTooSmall_WritesNullTerminator) {
-  auto result = ToString(-1234, span(buffer, 5));
+  auto result = ToString(-1234, std::span(buffer, 5));
   EXPECT_EQ(0u, result.size());
   EXPECT_FALSE(result.ok());
   EXPECT_STREQ("", buffer);
@@ -218,7 +218,7 @@ TEST(ToString, Status) {
 
 TEST(ToString, StatusCode) {
   EXPECT_EQ(sizeof("UNAVAILABLE") - 1,
-            ToString(Status::UNAVAILABLE, buffer).size());
+            ToString(Status::Unavailable(), buffer).size());
   EXPECT_STREQ("UNAVAILABLE", buffer);
 }
 
@@ -241,7 +241,7 @@ TEST(ToString, StringView) {
 
 TEST(ToString, StringView_TooSmall_Truncates) {
   std::string_view view = "kale!";
-  EXPECT_EQ(3u, ToString(view, span(buffer, 4)).size());
+  EXPECT_EQ(3u, ToString(view, std::span(buffer, 4)).size());
   EXPECT_STREQ("kal", buffer);
 }
 
@@ -250,8 +250,9 @@ TEST(ToString, StringView_EmptyBuffer_WritesNothing) {
   char test_buffer[sizeof(kOriginal)];
   std::memcpy(test_buffer, kOriginal, sizeof(kOriginal));
 
-  EXPECT_EQ(0u,
-            ToString(std::string_view("Hello!"), span(test_buffer, 0)).size());
+  EXPECT_EQ(
+      0u,
+      ToString(std::string_view("Hello!"), std::span(test_buffer, 0)).size());
   ASSERT_EQ(0, std::memcmp(kOriginal, test_buffer, sizeof(kOriginal)));
 }
 

@@ -12,344 +12,394 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_build/error.gni")
 import("$dir_pw_build/input_group.gni")
-import("$dir_pw_build/python_script.gni")
+import("$dir_pw_build/python.gni")
+import("$dir_pw_build/python_action.gni")
 import("$dir_pw_build/target_types.gni")
-import("nanopb.gni")
-declare_args() {
-  # Generators with which to compile protobuf code. These are used by the
-  # pw_proto_library template to determine which build targets to create.
-  #
-  # Supported generators:
-  #   "pwpb", "nanopb", "go"
-  pw_protobuf_GENERATORS = [
-    "pwpb",
-    "go",
-  ]
-}
+import("$dir_pw_third_party/nanopb/nanopb.gni")
 
-# Python script that invokes protoc.
-_gen_script_path =
-    "$dir_pw_protobuf_compiler/py/pw_protobuf_compiler/generate_protos.py"
-
+# Variables forwarded from the public pw_proto_library template to the final
+# pw_source_set.
 _forwarded_vars = [
   "testonly",
   "visibility",
 ]
 
+# Internal template that invokes protoc with a pw_python_action. This should not
+# be used outside of this file; use pw_proto_library instead.
+#
+# This creates the internal GN target $target_name.$language._gen that compiles
+# proto files with protoc.
+template("_pw_invoke_protoc") {
+  _output = rebase_path(get_target_outputs(":${invoker.base_target}._metadata"))
+
+  pw_python_action("$target_name._gen") {
+    forward_variables_from(invoker, [ "metadata" ])
+    script =
+        "$dir_pw_protobuf_compiler/py/pw_protobuf_compiler/generate_protos.py"
+
+    deps = [
+             ":${invoker.base_target}._metadata",
+             ":${invoker.base_target}._inputs",
+           ] + invoker.deps
+
+    args = [
+             "--language",
+             invoker.language,
+             "--module-path",
+             rebase_path("."),
+             "--include-file",
+             _output[0],
+             "--out-dir",
+             rebase_path(invoker.gen_dir),
+           ] + rebase_path(invoker.sources)
+
+    inputs = invoker.sources
+
+    if (defined(invoker.plugin)) {
+      inputs += [ invoker.plugin ]
+      args += [ "--plugin-path=" + rebase_path(invoker.plugin) ]
+    }
+
+    if (defined(invoker.include_paths)) {
+      args += [
+        "--include-paths",
+        string_join(";", rebase_path(invoker.include_paths)),
+      ]
+    }
+
+    outputs = []
+    foreach(extension, invoker.output_extensions) {
+      foreach(proto,
+              rebase_path(invoker.sources, get_path_info(".", "abspath"))) {
+        _output = string_replace(proto, ".proto", extension)
+        outputs += [ "${invoker.gen_dir}/$_output" ]
+      }
+    }
+
+    if (outputs == []) {
+      stamp = true
+    }
+
+    visibility = [ ":*" ]
+  }
+}
+
 # Generates pw_protobuf C++ code for proto files, creating a source_set of the
 # generated files. This is internal and should not be used outside of this file.
 # Use pw_proto_library instead.
-#
-# Args:
-#  protos: List of input .proto files.
 template("_pw_pwpb_proto_library") {
-  _proto_gen_dir = "$root_gen_dir/protos"
-  _module_path = get_path_info(".", "abspath")
-  _relative_proto_paths = rebase_path(invoker.protos, _module_path)
-
-  _outputs = []
-  foreach(_proto, _relative_proto_paths) {
-    _output = string_replace(_proto, ".proto", ".pwpb.h")
-    _outputs += [ "$_proto_gen_dir/$_output" ]
-  }
-
-  _gen_target = "${target_name}_gen"
-  pw_python_script(_gen_target) {
-    forward_variables_from(invoker, _forwarded_vars)
-    script = _gen_script_path
-    args = [
-             "--language",
-             "cc",
-             "--module-path",
-             _module_path,
-             "--include-file",
-             invoker.include_file,
-             "--out-dir",
-             _proto_gen_dir,
-           ] + get_path_info(invoker.protos, "abspath")
-    inputs = invoker.protos
-    outputs = _outputs
-    deps = invoker.deps
-    if (defined(invoker.protoc_deps)) {
-      deps += invoker.protoc_deps
-    }
-  }
-
-  # For C++ proto files, the generated proto directory is added as an include
-  # path for the code. This requires using "all_dependent_configs" to force the
-  # include on any code that transitively depends on the generated protos.
-  _include_config_target = "${target_name}_includes"
-  config(_include_config_target) {
-    include_dirs = [ "$_proto_gen_dir" ]
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "pwpb"
+    plugin = "$dir_pw_protobuf/py/pw_protobuf/plugin.py"
+    deps += [ "$dir_pw_protobuf/py" ]
+    output_extensions = [ ".pwpb.h" ]
   }
 
   # Create a library with the generated source files.
   pw_source_set(target_name) {
-    all_dependent_configs = [ ":$_include_config_target" ]
-    deps = [ ":$_gen_target" ]
-    public_deps = [ dir_pw_protobuf ] + invoker.gen_deps
-    sources = get_target_outputs(":$_gen_target")
+    forward_variables_from(invoker, _forwarded_vars)
+    public_configs = [ ":${invoker.base_target}._include_path" ]
+    deps = [ ":$target_name._gen" ]
+    public_deps = [ dir_pw_protobuf ] + invoker.deps
+    sources = get_target_outputs(":$target_name._gen")
     public = filter_include(sources, [ "*.pwpb.h" ])
+  }
+}
+
+# Generates nanopb RPC code for proto files, creating a source_set of the
+# generated files. This is internal and should not be used outside of this file.
+# Use pw_proto_library instead.
+template("_pw_nanopb_rpc_proto_library") {
+  # Create a target which runs protoc configured with the nanopb_rpc plugin to
+  # generate the C++ proto RPC headers.
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "nanopb_rpc"
+    plugin = "$dir_pw_rpc/py/pw_rpc/plugin_nanopb.py"
+    deps += [ "$dir_pw_rpc/py" ]
+    include_paths = [ "$dir_pw_third_party_nanopb/generator/proto" ]
+    output_extensions = [ ".rpc.pb.h" ]
+  }
+
+  # Create a library with the generated source files.
+  pw_source_set(target_name) {
+    forward_variables_from(invoker, _forwarded_vars)
+    public_configs = [ ":${invoker.base_target}._include_path" ]
+    deps = [ ":$target_name._gen" ]
+    public_deps = [
+                    ":${invoker.base_target}.nanopb",
+                    "$dir_pw_rpc:server",
+                    "$dir_pw_rpc/nanopb:method_union",
+                    "$dir_pw_third_party/nanopb",
+                  ] + invoker.deps
+    public = get_target_outputs(":$target_name._gen")
   }
 }
 
 # Generates nanopb code for proto files, creating a source_set of the generated
 # files. This is internal and should not be used outside of this file. Use
 # pw_proto_library instead.
-#
-# Args:
-#  protos: List of input .proto files.
 template("_pw_nanopb_proto_library") {
-  assert(defined(dir_pw_third_party_nanopb) && dir_pw_third_party_nanopb != "",
-         "\$dir_pw_third_party_nanopb must be set to compile nanopb protobufs")
-
-  _proto_gen_dir = "$root_gen_dir/protos"
-  _module_path = get_path_info(".", "abspath")
-  _relative_proto_paths = rebase_path(invoker.protos, _module_path)
-
-  _outputs = []
-  foreach(_proto, _relative_proto_paths) {
-    _output_h = string_replace(_proto, ".proto", ".pb.h")
-    _output_c = string_replace(_proto, ".proto", ".pb.c")
-    _outputs += [
-      "$_proto_gen_dir/$_output_h",
-      "$_proto_gen_dir/$_output_c",
-    ]
-  }
-
-  _nanopb_plugin = "$dir_pw_third_party_nanopb/generator/protoc-gen-nanopb"
-  if (host_os == "win") {
-    _nanopb_plugin += ".bat"
-  }
-
   # Create a target which runs protoc configured with the nanopb plugin to
   # generate the C proto sources.
-  _gen_target = "${target_name}_gen"
-  pw_python_script(_gen_target) {
-    forward_variables_from(invoker, _forwarded_vars)
-    script = _gen_script_path
-    args = [
-             "--language",
-             "nanopb",
-             "--module-path",
-             _module_path,
-             "--include-paths",
-             "$dir_pw_third_party_nanopb/generator/proto",
-             "--include-file",
-             invoker.include_file,
-             "--out-dir",
-             _proto_gen_dir,
-             "--custom-plugin",
-             get_path_info(_nanopb_plugin, "abspath"),
-           ] + get_path_info(invoker.protos, "abspath")
-    inputs = invoker.protos
-    outputs = _outputs
-
-    deps = invoker.deps
-    if (defined(invoker.protoc_deps)) {
-      deps += invoker.protoc_deps
-    }
-  }
-
-  # For C++ proto files, the generated proto directory is added as an include
-  # path for the code. This requires using "all_dependent_configs" to force the
-  # include on any code that transitively depends on the generated protos.
-  _include_root = rebase_path(get_path_info(".", "abspath"), "//")
-  _include_config_target = "${target_name}_includes"
-  config(_include_config_target) {
-    include_dirs = [
-      "$_proto_gen_dir",
-      "$_proto_gen_dir/$_include_root",
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "nanopb"
+    plugin = "$dir_pw_third_party_nanopb/generator/protoc-gen-nanopb"
+    include_paths = [ "$dir_pw_third_party_nanopb/generator/proto" ]
+    output_extensions = [
+      ".pb.h",
+      ".pb.c",
     ]
   }
 
   # Create a library with the generated source files.
   pw_source_set(target_name) {
-    all_dependent_configs = [ ":$_include_config_target" ]
-    deps = [ ":$_gen_target" ]
-    public_deps = [ dir_pw_third_party_nanopb ] + invoker.gen_deps
-    sources = get_target_outputs(":$_gen_target")
+    forward_variables_from(invoker, _forwarded_vars)
+    public_configs = [ ":${invoker.base_target}._include_path" ]
+    deps = [ ":$target_name._gen" ]
+    public_deps = [ "$dir_pw_third_party/nanopb" ] + invoker.deps
+    sources = get_target_outputs(":$target_name._gen")
     public = filter_include(sources, [ "*.pb.h" ])
+  }
+}
+
+# Generates raw RPC code for proto files, creating a source_set of the generated
+# files. This is internal and should not be used outside of this file. Use
+# pw_proto_library instead.
+template("_pw_raw_rpc_proto_library") {
+  # Create a target which runs protoc configured with the nanopb_rpc plugin to
+  # generate the C++ proto RPC headers.
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "raw_rpc"
+    plugin = "$dir_pw_rpc/py/pw_rpc/plugin_raw.py"
+    deps += [ "$dir_pw_rpc/py" ]
+    output_extensions = [ ".raw_rpc.pb.h" ]
+  }
+
+  # Create a library with the generated source files.
+  pw_source_set(target_name) {
+    forward_variables_from(invoker, _forwarded_vars)
+    public_configs = [ ":${invoker.base_target}._include_path" ]
+    deps = [ ":$target_name._gen" ]
+    public_deps = [
+                    "$dir_pw_rpc:server",
+                    "$dir_pw_rpc/raw:method_union",
+                  ] + invoker.deps
+    public = get_target_outputs(":$target_name._gen")
   }
 }
 
 # Generates Go code for proto files, listing the proto output directory in the
 # metadata variable GOPATH. Internal use only.
-#
-# Args:
-#  protos: List of input .proto files.
 template("_pw_go_proto_library") {
   _proto_gopath = "$root_gen_dir/go"
-  _proto_gen_dir = "$_proto_gopath/src"
-  _rebased_gopath = rebase_path(_proto_gopath)
 
-  pw_python_script(target_name) {
-    forward_variables_from(invoker, _forwarded_vars)
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*")
+    language = "go"
     metadata = {
-      gopath = [ "GOPATH+=$_rebased_gopath" ]
+      gopath = [ "GOPATH+=" + rebase_path(_proto_gopath) ]
       external_deps = [
         "github.com/golang/protobuf/proto",
         "google.golang.org/grpc",
       ]
     }
-    script = _gen_script_path
+    output_extensions = []  # Don't enumerate the generated .go files.
+    gen_dir = "$_proto_gopath/src"
+  }
+
+  group(target_name) {
+    deps = [ ":$target_name._gen" ]
+  }
+}
+
+# Generates Python code for proto files, creating a pw_python_package containing
+# the generated files. This is internal and should not be used outside of this
+# file. Use pw_proto_library instead.
+template("_pw_python_proto_library") {
+  _target = target_name
+  _package_dir = ""
+
+  foreach(_rebased_proto_path, rebase_path(invoker.sources, ".")) {
+    _path_components = []
+    _path_components = string_split(_rebased_proto_path, "/")
+
+    assert(_path_components != [ _rebased_proto_path ] &&
+               _path_components[0] != "..",
+           "Sources in a pw_proto_library must live in subdirectories " +
+               "of where it is defined")
+
+    if (_package_dir == "") {
+      _package_dir = _path_components[0]
+    } else {
+      assert(_path_components[0] == _package_dir,
+             "All .proto sources in a pw_proto_library must live " +
+                 "in the same directory tree")
+    }
+  }
+
+  _pw_invoke_protoc(target_name) {
+    forward_variables_from(invoker, "*", _forwarded_vars)
+    language = "python"
+    output_extensions = [ "_pb2.py" ]
+  }
+
+  _setup_py = "${invoker.gen_dir}/setup.py"
+
+  # Create the setup and init files for the Python package.
+  pw_python_action(target_name + "._package_gen") {
+    script = "$dir_pw_protobuf_compiler/py/pw_protobuf_compiler/generate_python_package.py"
     args = [
-             "--language",
-             "go",
-             "--module-path",
-             "//",
-             "--include-file",
-             invoker.include_file,
-             "--out-dir",
-             _proto_gen_dir,
-           ] + get_path_info(invoker.protos, "abspath")
-    inputs = invoker.protos
-    deps = invoker.deps + invoker.gen_deps
+             "--setup",
+             rebase_path(_setup_py),
+             "--package",
+             _package_dir,
+           ] + rebase_path(get_path_info(invoker.sources, "dir"), ".")
+    public_deps = [ ":$_target._gen" ]
     stamp = true
+  }
+
+  # Create a Python package with the generated source files.
+  pw_python_package(target_name) {
+    forward_variables_from(invoker, _forwarded_vars)
+    setup = [ _setup_py ]
+    sources = get_target_outputs(":$target_name._gen")
+    python_deps = invoker.deps
+    other_deps = [ ":$_target._package_gen" ]
+    _pw_generated = true
   }
 }
 
 # Generates protobuf code from .proto definitions for various languages.
+# For each supported generator, creates a sub-target named:
 #
-# The generators to use are defined in the pw_protobuf_GENERATORS build
-# variable. Each listed generator creates a generated code target called
-#
-#   <target_name>_<generator>
-#
-# For example, with the following definitions:
-#
-#   pw_protobuf_GENERATORS = [ "pwpb", "py" ]
-#
-#   pw_proto_library("my_protos") {
-#     sources = [ "foo.proto" ]
-#   }
-#
-# Two build targets will be created for the declared "my_protos" target.
-#
-#   "my_protos_pwpb"  <-- C++ source_set containing generated proto code
-#   "my_protos_py"    <-- Python module containing generated proto code
+#   <target_name>.<generator>
 #
 # Args:
 #  sources: List of input .proto files.
 #  deps: List of other pw_proto_library dependencies.
 #  inputs: Other files on which the protos depend (e.g. nanopb .options files).
+#
 template("pw_proto_library") {
   assert(defined(invoker.sources) && invoker.sources != [],
          "pw_proto_library requires .proto source files")
 
+  _common = {
+    base_target = target_name
+    gen_dir = "$target_gen_dir/protos"
+    sources = invoker.sources
+  }
+
+  if (defined(invoker.deps)) {
+    _deps = invoker.deps
+  } else {
+    _deps = []
+  }
+
   # For each proto target, create a file which collects the base directories of
   # all of its dependencies to list as include paths to protoc.
-  _include_metadata_target = "${target_name}_include_paths"
-  _include_metadata_file = "${target_gen_dir}/${target_name}_includes.txt"
-  generated_file(_include_metadata_target) {
-    if (defined(invoker.deps)) {
-      # Collect metadata from the include path files of each dependency.
-      deps = process_file_template(invoker.deps, "{{source}}_include_paths")
-    } else {
-      deps = []
-    }
+  generated_file("$target_name._metadata") {
+    # Collect metadata from the include path files of each dependency.
+    deps = process_file_template(_deps, "{{source}}._metadata")
+
     data_keys = [ "protoc_includes" ]
-    outputs = [ _include_metadata_file ]
+    outputs = [ "$target_gen_dir/${_common.base_target}_includes.txt" ]
 
     # Indicate this library's base directory for its dependents.
     metadata = {
-      protoc_includes = [ rebase_path(".", root_out_dir) ]
+      protoc_includes = [ rebase_path(".") ]
     }
   }
 
-  _deps = [ ":$_include_metadata_target" ]
-
+  # Toss any additional inputs into an input group dependency.
   if (defined(invoker.inputs)) {
-    # Toss any additional inputs into an input group dependency.
-    _input_target_name = "${target_name}_inputs"
-    pw_input_group(_input_target_name) {
+    pw_input_group("$target_name._inputs") {
       inputs = invoker.inputs
+      visibility = [ ":*" ]
     }
-    _deps += [ ":$_input_target_name" ]
+  } else {
+    group("$target_name._inputs") {
+      visibility = [ ":*" ]
+    }
   }
 
-  foreach(_gen, pw_protobuf_GENERATORS) {
-    _lang_target = "${target_name}_${_gen}"
-    _gen_deps = []
-    if (defined(invoker.deps)) {
-      _gen_deps = process_file_template(invoker.deps, "{{source}}_${_gen}")
+  # Create a config with the generated proto directory, which is used for C++.
+  config("$target_name._include_path") {
+    include_dirs = [ _common.gen_dir ]
+    visibility = [ ":*" ]
+  }
+
+  # Enumerate all of the protobuf generator targets.
+
+  _pw_pwpb_proto_library("$target_name.pwpb") {
+    forward_variables_from(invoker, _forwarded_vars)
+    forward_variables_from(_common, "*")
+    deps = process_file_template(_deps, "{{source}}.pwpb")
+  }
+
+  if (dir_pw_third_party_nanopb != "") {
+    _pw_nanopb_rpc_proto_library("$target_name.nanopb_rpc") {
+      forward_variables_from(invoker, _forwarded_vars)
+      forward_variables_from(_common, "*")
+      deps = process_file_template(_deps, "{{source}}.nanopb_rpc")
     }
 
-    if (_gen == "pwpb") {
-      _pw_pwpb_proto_library(_lang_target) {
-        forward_variables_from(invoker, _forwarded_vars)
-        protos = invoker.sources
-        deps = _deps
-        include_file = _include_metadata_file
-        gen_deps = _gen_deps
-
-        # List the pw_protobuf plugin's files as a dependency to recompile
-        # generated code if they are modified.
-        protoc_deps = [ "$dir_pw_protobuf:codegen_protoc_plugin" ]
-      }
-    } else if (_gen == "nanopb") {
-      _pw_nanopb_proto_library(_lang_target) {
-        forward_variables_from(invoker, _forwarded_vars)
-        protos = invoker.sources
-        deps = _deps
-        include_file = _include_metadata_file
-        gen_deps = _gen_deps
-      }
-    } else if (_gen == "go") {
-      _pw_go_proto_library(_lang_target) {
-        forward_variables_from(invoker, _forwarded_vars)
-        protos = invoker.sources
-        deps = _deps
-        include_file = _include_metadata_file
-        gen_deps = _gen_deps
-      }
-    } else {
-      assert(false,
-             string_join(
-                 " ",
-                 [
-                   "pw_proto_library doesn't know how to generate code for",
-                   "generator '$_gen'. Please add support if you require it.",
-                 ]))
+    _pw_nanopb_proto_library("$target_name.nanopb") {
+      forward_variables_from(invoker, _forwarded_vars)
+      forward_variables_from(_common, "*")
+      deps = process_file_template(_deps, "{{source}}.nanopb")
     }
+  } else {
+    pw_error("$target_name.nanopb_rpc") {
+      message =
+          "\$dir_pw_third_party_nanopb must be set to generate nanopb RPC code."
+    }
+
+    pw_error("$target_name.nanopb") {
+      message =
+          "\$dir_pw_third_party_nanopb must be set to compile nanopb protobufs."
+    }
+  }
+
+  _pw_raw_rpc_proto_library("$target_name.raw_rpc") {
+    forward_variables_from(invoker, _forwarded_vars)
+    forward_variables_from(_common, "*", [ "deps" ])
+    deps = process_file_template(_deps, "{{source}}.raw_rpc")
+  }
+
+  _pw_go_proto_library("$target_name.go") {
+    sources = invoker.sources
+    deps = process_file_template(_deps, "{{source}}.go")
+    base_target = _common.base_target
+  }
+
+  _pw_python_proto_library("$target_name.python") {
+    sources = invoker.sources
+    forward_variables_from(_common, "*")
+    deps = process_file_template(_deps, "{{source}}.python")
+    base_target = _common.base_target
   }
 
   # All supported pw_protobuf generators.
   _protobuf_generators = [
     "pwpb",
     "nanopb",
+    "nanopb_rpc",
+    "raw_rpc",
     "go",
+    "python",
   ]
-
-  # Create stub versions of the proto library for other protobuf generators.
-  foreach(_gen, _protobuf_generators - pw_protobuf_GENERATORS) {
-    pw_python_script("${target_name}_${_gen}") {
-      forward_variables_from(invoker, _forwarded_vars)
-      script = string_join("/",
-                           [
-                             dir_pw_protobuf_compiler,
-                             "py",
-                             "pw_protobuf_compiler",
-                             "generator_not_selected.py",
-                           ])
-      args = [
-        "--library",
-        "${target_name}_${_gen}",
-        "--generator",
-        _gen,
-      ]
-      inputs = invoker.sources
-      stamp = true
-    }
-  }
 
   # If the user attempts to use the target directly instead of one of the
   # generator targets, run a script which prints a nice error message.
-  pw_python_script(target_name) {
+  pw_python_action(target_name) {
     script = string_join("/",
                          [
                            dir_pw_protobuf_compiler,
@@ -364,7 +414,7 @@ template("pw_proto_library") {
              get_path_info(".", "abspath"),
              "--root",
              "//",
-           ] + pw_protobuf_GENERATORS
+           ] + _protobuf_generators
     stamp = true
   }
 }

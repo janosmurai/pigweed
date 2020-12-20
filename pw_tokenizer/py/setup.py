@@ -13,13 +13,7 @@
 # the License.
 """The pw_tokenizer package."""
 
-import unittest
-import setuptools
-
-
-def test_suite():
-    return unittest.TestLoader().discover('./', pattern='*_test.py')
-
+import setuptools  # type: ignore
 
 setuptools.setup(
     name='pw_tokenizer',
@@ -28,5 +22,8 @@ setuptools.setup(
     author_email='pigweed-developers@googlegroups.com',
     description='Tools for decoding tokenized strings',
     packages=setuptools.find_packages(),
+    package_data={'pw_tokenizer': ['py.typed']},
+    zip_safe=False,
     test_suite='setup.test_suite',
+    extra_requires=['serial'],
 )

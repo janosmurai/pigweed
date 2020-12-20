@@ -15,11 +15,13 @@
 #include <array>
 
 #include "gtest/gtest.h"
-#include "pw_polyfill/language_features.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_polyfill/standard.h"
+#include "pw_polyfill/standard_library/bit.h"
 #include "pw_polyfill/standard_library/cstddef.h"
 #include "pw_polyfill/standard_library/iterator.h"
 #include "pw_polyfill/standard_library/type_traits.h"
+#include "pw_polyfill/standard_library/utility.h"
 
 namespace pw {
 namespace polyfill {
@@ -44,6 +46,52 @@ static_assert(PW_CXX_STANDARD_IS_SUPPORTED(17), "C++17 must be not supported");
 static_assert(!PW_CXX_STANDARD_IS_SUPPORTED(17), "C++17 must be supported");
 #endif  // __cplusplus >= 201703L
 
+TEST(Array, ToArray_StringLiteral) {
+  std::array<char, sizeof("literally!")> array = std::to_array("literally!");
+  EXPECT_TRUE(std::strcmp(array.data(), "literally!") == 0);
+}
+
+TEST(Array, ToArray_Inline) {
+  constexpr std::array<int, 3> kArray = std::to_array({1, 2, 3});
+  static_assert(kArray.size() == 3);
+  EXPECT_TRUE(kArray[0] == 1);
+}
+
+TEST(Array, ToArray_Array) {
+  char c_array[] = "array!";
+  std::array<char, sizeof("array!")> array = std::to_array(c_array);
+  EXPECT_TRUE(std::strcmp(array.data(), "array!") == 0);
+}
+
+struct MoveOnly {
+  MoveOnly(char ch) : value(ch) {}
+
+  MoveOnly(const MoveOnly&) = delete;
+  MoveOnly& operator=(const MoveOnly&) = delete;
+
+  MoveOnly(MoveOnly&&) = default;
+  MoveOnly& operator=(MoveOnly&&) = default;
+
+  char value;
+};
+
+TEST(Array, ToArray_MoveOnly) {
+  MoveOnly c_array[]{MoveOnly('a'), MoveOnly('b')};
+  std::array<MoveOnly, 2> array = std::to_array(std::move(c_array));
+  EXPECT_TRUE(array[0].value == 'a');
+  EXPECT_TRUE(array[1].value == 'b');
+}
+
+TEST(Bit, Endian) {
+  if (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) {
+    EXPECT_TRUE(std::endian::native == std::endian::big);
+  } else if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) {
+    EXPECT_TRUE(std::endian::native == std::endian::little);
+  } else {
+    FAIL();
+  }
+}
+
 TEST(Cstddef, Byte_Operators) {
   std::byte value = std::byte(0);
   EXPECT_TRUE((value | std::byte(0x12)) == std::byte(0x12));
@@ -63,7 +111,11 @@ TEST(Cstddef, Byte_AssignmentOperators) {
   EXPECT_TRUE((value >>= 5) == std::byte(0x6));
 }
 
-int c_array[5423];
+// Check that consteval is at least equivalent to constexpr.
+consteval int ConstevalFunction() { return 123; }
+static_assert(ConstevalFunction() == 123);
+
+int c_array[5423] = {};
 std::array<int, 32> array;
 
 TEST(Iterator, Size) {
@@ -74,6 +126,15 @@ TEST(Iterator, Size) {
 TEST(Iterator, Data) {
   EXPECT_TRUE(std::data(c_array) == c_array);
   EXPECT_TRUE(std::data(array) == array.data());
+}
+
+constinit bool mutable_value = true;
+
+TEST(Constinit, ValueIsMutable) {
+  ASSERT_TRUE(mutable_value);
+  mutable_value = false;
+  ASSERT_FALSE(mutable_value);
+  mutable_value = true;
 }
 
 TEST(TypeTraits, Aliases) {
@@ -118,6 +179,13 @@ TEST(TypeTraits, Aliases) {
   static_assert(std::is_same<std::remove_reference_t<int>,
                              typename std::remove_reference<int>::type>::value,
                 "Alias must be defined");
+}
+
+TEST(Utility, IntegerSequence) {
+  static_assert(std::integer_sequence<int>::size() == 0);
+  static_assert(std::integer_sequence<int, 9, 8, 7>::size() == 3);
+  static_assert(std::make_index_sequence<1>::size() == 1);
+  static_assert(std::make_index_sequence<123>::size() == 123);
 }
 
 }  // namespace

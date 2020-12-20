@@ -12,8 +12,11 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+
 pw_auto_add_simple_module(pw_bytes
   PUBLIC_DEPS
+    pw_polyfill.overrides
     pw_preprocessor
     pw_span
     pw_status

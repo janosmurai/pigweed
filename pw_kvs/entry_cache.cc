@@ -13,6 +13,7 @@
 // the License.
 
 #define PW_LOG_MODULE_NAME "KVS"
+#define PW_LOG_LEVEL PW_KVS_LOG_LEVEL
 
 #include "pw_kvs/internal/entry_cache.h"
 
@@ -21,7 +22,7 @@
 #include "pw_kvs/flash_memory.h"
 #include "pw_kvs/internal/entry.h"
 #include "pw_kvs/internal/hash.h"
-#include "pw_kvs_private/macros.h"
+#include "pw_kvs_private/config.h"
 #include "pw_log/log.h"
 
 namespace pw::kvs::internal {
@@ -44,7 +45,7 @@ void EntryMetadata::RemoveAddress(Address address_to_remove) {
 
       // Remove the back entry of the address list.
       addresses_.back() = kNoAddress;
-      addresses_ = span(addresses_.begin(), addresses_.size() - 1);
+      addresses_ = std::span(addresses_.begin(), addresses_.size() - 1);
       break;
     }
   }
@@ -104,18 +105,18 @@ StatusWithSize EntryCache::Find(FlashPartition& partition,
 
       if (!key_found) {
         PW_LOG_ERROR("No valid entries for key. Data has been lost!");
-        return StatusWithSize(Status::DATA_LOSS, error_val);
+        return StatusWithSize::DataLoss(error_val);
       } else if (key == read_key) {
         PW_LOG_DEBUG("Found match for key hash 0x%08" PRIx32, hash);
         *metadata = EntryMetadata(descriptors_[i], addresses(i));
-        return StatusWithSize(Status::OK, error_val);
+        return StatusWithSize::Ok(error_val);
       } else {
         PW_LOG_WARN("Found key hash collision for 0x%08" PRIx32, hash);
-        return StatusWithSize(Status::ALREADY_EXISTS, error_val);
+        return StatusWithSize::AlreadyExists(error_val);
       }
     }
   }
-  return StatusWithSize::NOT_FOUND;
+  return StatusWithSize::NotFound();
 }
 
 EntryMetadata EntryCache::AddNew(const KeyDescriptor& descriptor,
@@ -123,7 +124,7 @@ EntryMetadata EntryCache::AddNew(const KeyDescriptor& descriptor,
   // TODO(hepler): DCHECK(!full());
   Address* first_address = ResetAddresses(descriptors_.size(), entry_address);
   descriptors_.push_back(descriptor);
-  return EntryMetadata(descriptors_.back(), span(first_address, 1));
+  return EntryMetadata(descriptors_.back(), std::span(first_address, 1));
 }
 
 // TODO: This method is the trigger of the O(valid_entries * all_entries) time
@@ -140,17 +141,17 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
   // Write a new entry if there is room.
   if (index == -1) {
     if (full()) {
-      return Status::RESOURCE_EXHAUSTED;
+      return Status::ResourceExhausted();
     }
     AddNew(descriptor, address);
-    return Status::OK;
+    return Status::Ok();
   }
 
   // Existing entry is old; replace the existing entry with the new one.
   if (descriptor.transaction_id > descriptors_[index].transaction_id) {
     descriptors_[index] = descriptor;
     ResetAddresses(index, address);
-    return Status::OK;
+    return Status::Ok();
   }
 
   // If the entries have a duplicate transaction ID, add the new (redundant)
@@ -161,7 +162,7 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
                    " with transaction ID %" PRIu32 " has non-matching hash",
                    descriptor.key_hash,
                    descriptor.transaction_id);
-      return Status::DATA_LOSS;
+      return Status::DataLoss();
     }
 
     // Verify that this entry is not in the same sector as an existing copy of
@@ -170,7 +171,7 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
       if (existing_address / sector_size_bytes == address / sector_size_bytes) {
         PW_LOG_DEBUG("Multiple Redundant entries in same sector %u",
                      unsigned(address / sector_size_bytes));
-        return Status::DATA_LOSS;
+        return Status::DataLoss();
       }
     }
 
@@ -178,7 +179,7 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
   } else {
     PW_LOG_DEBUG("Found stale entry when appending; ignoring");
   }
-  return Status::OK;
+  return Status::Ok();
 }
 
 size_t EntryCache::present_entries() const {
@@ -214,7 +215,8 @@ void EntryCache::AddAddressIfRoom(size_t descriptor_index,
   }
 }
 
-span<EntryCache::Address> EntryCache::addresses(size_t descriptor_index) const {
+std::span<EntryCache::Address> EntryCache::addresses(
+    size_t descriptor_index) const {
   Address* const addresses = first_address(descriptor_index);
 
   size_t size = 0;
@@ -222,7 +224,7 @@ span<EntryCache::Address> EntryCache::addresses(size_t descriptor_index) const {
     size += 1;
   }
 
-  return span(addresses, size);
+  return std::span(addresses, size);
 }
 
 EntryCache::Address* EntryCache::ResetAddresses(size_t descriptor_index,

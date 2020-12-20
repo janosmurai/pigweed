@@ -70,6 +70,16 @@ class ProtoNode(abc.ABC):
         return '::'.join(
             self._attr_hierarchy(lambda node: node.cpp_name(), root))
 
+    def proto_path(self) -> str:
+        """Fully-qualified package path of the node."""
+        path = '.'.join(self._attr_hierarchy(lambda node: node.name(), None))
+        return path.lstrip('.')
+
+    def nanopb_name(self) -> str:
+        """Full nanopb-style name of the node."""
+        name = '_'.join(self._attr_hierarchy(lambda node: node.name(), None))
+        return name.lstrip('_')
+
     def common_ancestor(self, other: 'ProtoNode') -> Optional['ProtoNode']:
         """Finds the earliest common ancestor of this node and other."""
 
@@ -314,10 +324,14 @@ class ProtoMessageField:
 class ProtoServiceMethod:
     """A method defined in a protobuf service."""
     class Type(enum.Enum):
-        UNARY = 0
-        SERVER_STREAMING = 1
-        CLIENT_STREAMING = 2
-        BIDIRECTIONAL_STREAMING = 3
+        UNARY = 'kUnary'
+        SERVER_STREAMING = 'kServerStreaming'
+        CLIENT_STREAMING = 'kClientStreaming'
+        BIDIRECTIONAL_STREAMING = 'kBidirectionalStreaming'
+
+        def cc_enum(self) -> str:
+            """Returns the pw_rpc MethodType C++ enum for this method type."""
+            return '::pw::rpc::internal::MethodType::' + self.value
 
     def __init__(self, name: str, method_type: Type, request_type: ProtoNode,
                  response_type: ProtoNode):
@@ -328,6 +342,23 @@ class ProtoServiceMethod:
 
     def name(self) -> str:
         return self._name
+
+    def type(self) -> Type:
+        return self._type
+
+    def server_streaming(self) -> bool:
+        return (self._type is self.Type.SERVER_STREAMING
+                or self._type is self.Type.BIDIRECTIONAL_STREAMING)
+
+    def client_streaming(self) -> bool:
+        return (self._type is self.Type.CLIENT_STREAMING
+                or self._type is self.Type.BIDIRECTIONAL_STREAMING)
+
+    def request_type(self) -> ProtoNode:
+        return self._request_type
+
+    def response_type(self) -> ProtoNode:
+        return self._response_type
 
 
 def _add_enum_fields(enum_node: ProtoNode, proto_enum) -> None:

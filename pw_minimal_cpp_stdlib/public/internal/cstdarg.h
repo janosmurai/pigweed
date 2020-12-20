@@ -15,8 +15,10 @@
 
 #include <stdarg.h>
 
-namespace std {
+#include "pw_polyfill/standard_library/namespace.h"
+
+_PW_POLYFILL_BEGIN_NAMESPACE_STD
 
 using ::va_list;
 
-}  // namespace std
+_PW_POLYFILL_END_NAMESPACE_STD

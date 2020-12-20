@@ -53,7 +53,7 @@ extern "C" size_t pw_VarintDecode(const void* input,
   const std::byte* buffer = static_cast<const std::byte*>(input);
 
   // The largest 64-bit ints require 10 B.
-  const size_t max_count = std::min(kMaxVarintSizeBytes, input_size);
+  const size_t max_count = std::min(kMaxVarint64SizeBytes, input_size);
 
   while (true) {
     if (count >= max_count) {
@@ -84,11 +84,11 @@ extern "C" size_t pw_VarintZigZagDecode(const void* input,
 }
 
 extern "C" size_t pw_VarintEncodedSize(uint64_t integer) {
-  return integer == 0 ? 1 : (64 - __builtin_clzll(integer) + 6) / 7;
+  return EncodedSize(integer);
 }
 
 extern "C" size_t pw_VarintZigZagEncodedSize(int64_t integer) {
-  return pw_VarintEncodedSize(ZigZagEncode(integer));
+  return ZigZagEncodedSize(integer);
 }
 
 }  // namespace varint

@@ -1,13 +1,12 @@
-.. _chapter-pw-unit-test:
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _module-pw_unit_test:
 
 ------------
 pw_unit_test
 ------------
 ``pw_unit_test`` unit testing library with a `Google Test`_-compatible API,
 built on top of embedded-friendly primitives.
+
+.. _Google Test: https://github.com/google/googletest/blob/master/googletest/docs/primer.md
 
 ``pw_unit_test`` is a portable library which can run on almost any system from
 from bare metal to a full-fledged desktop OS. It does this by offloading the
@@ -139,10 +138,13 @@ The ``pw_unit_test`` module provides a few optional libraries to simplify setup:
 
 pw_test template
 ----------------
+``pw_test`` defines a single unit test suite. It creates several sub-targets.
 
-``pw_test`` defines a single test binary. It wraps ``pw_executable`` and pulls
-in the test framework as well as the test entry point defined by the
-``pw_unit_test_main`` build variable.
+* ``<target_name>``: The test suite within a single binary. The test code is
+  linked against the target set in the build arg ``pw_unit_test_MAIN``.
+* ``<target_name>.run``: If ``pw_unit_test_AUTOMATIC_RUNNER`` is set, this
+  target runs the test as part of the build.
+* ``<target_name>.lib``: The test sources without ``pw_unit_test_MAIN``.
 
 **Arguments**
 
@@ -168,10 +170,18 @@ in the test framework as well as the test entry point defined by the
 
 pw_test_group template
 ----------------------
+``pw_test_group`` defines a collection of tests or other test groups. It creates
+several sub-targets:
 
-``pw_test_group`` defines a collection of tests or other test groups. Each
-module should expose a ``pw_test_group`` called ``tests`` with the module's test
-binaries.
+* ``<target_name>``: The test group itself.
+* ``<target_name>.run``: If ``pw_unit_test_AUTOMATIC_RUNNER`` is set, this
+  target runs all of the tests in the group and all of its group dependencies
+  individually.
+* ``<target_name>.lib``: The sources of all of the tests in this group and its
+  dependencies.
+* ``<target_name>.bundle``: All of the tests in the group and its dependencies
+  bundled into a single binary.
+* ``<target_name>.bundle.run``: Automatic runner for the test bundle.
 
 **Arguments**
 
@@ -202,5 +212,45 @@ binaries.
     # ...
   }
 
+RPC service
+===========
+``pw_unit_test`` provides an RPC service which runs unit tests on demand and
+streams the results back to the client. The service is defined in
+``pw_unit_test_proto/unit_test.proto``, and implemented by the GN target
+``$dir_pw_unit_test:rpc_service``.
 
-.. _Google Test: https://github.com/google/googletest/blob/master/googletest/docs/primer.md
+To set up RPC-based unit tests in your application, instantiate a
+``pw::unit_test::UnitTestService`` and register it with your RPC server.
+
+.. code:: c++
+
+  #include "pw_rpc/server.h"
+  #include "pw_unit_test/unit_test_service.h"
+
+  // Server setup; refer to pw_rpc docs for more information.
+  pw::rpc::Channel channels[] = {
+   pw::rpc::Channel::Create<1>(&my_output),
+  };
+  pw::rpc::Server server(channels);
+
+  pw::unit_test::UnitTestService unit_test_service;
+
+  void RegisterServices() {
+    server.RegisterService(unit_test_services);
+  }
+
+All tests flashed to an attached device can be run via python by calling
+``pw_unit_test.rpc.run_tests()`` with a RPC client services object that has
+the unit testing RPC service enabled. By default, the results will output via
+logging.
+
+.. code:: python
+
+  from pw_hdlc_lite.rpc import HdlcRpcClient
+  from pw_unit_test.rpc import run_tests
+
+  PROTO = Path(os.environ['PW_ROOT'],
+               'pw_unit_test/pw_unit_test_proto/unit_test.proto')
+
+  client = HdlcRpcClient(serial.Serial(device, baud), PROTO)
+  run_tests(client.rpcs())

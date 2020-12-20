@@ -1,8 +1,4 @@
-.. _chapter-pw-bytes:
-
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _module-pw_bytes:
 
 ---------
 pw_bytes
@@ -22,11 +18,27 @@ Dependencies
 Features
 ========
 
-pw::ByteBuilder
------------------
-ByteBuilder is a utility class which facilitates the creation and
-building of formatted bytes in a fixed-size buffer.
+pw_bytes/array.h
+----------------
+Functions for working with byte arrays, primarily for building fixed-size byte
+arrays at compile time.
 
-Future work
-^^^^^^^^^^^
-* Adding Endianness
+pw_bytes/byte_builder.h
+-----------------------
+.. cpp:class:: ByteBuilder
+
+  ``ByteBuilder`` is a class that facilitates building or reading arrays of
+  bytes in a fixed-size buffer. ByteBuilder handles reading and writing integers
+  with varying endianness.
+
+.. cpp:class:: template <size_t max_size> ByteBuffer
+
+  ``ByteBuilder`` with an internally allocated buffer.
+
+Size report: using ByteBuffer
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. include:: byte_builder_size_report
+
+pw_bytes/endian.h
+-----------------
+Functions for converting the endianness of integral values.

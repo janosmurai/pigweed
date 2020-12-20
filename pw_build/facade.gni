@@ -11,68 +11,86 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-# gn-format disable
+
 import("//build_overrides/pigweed.gni")
 
-import("$dir_pw_build/python_script.gni")
+import("$dir_pw_build/python_action.gni")
 import("$dir_pw_build/target_types.gni")
 
 # Declare a facade.
-# A Pigweed facade is an API layer that has a single implementation it must link
-# against. Typically this will be done by pointing `dir_pw_[module]_backend` at
-# a backend implementation for that module.
 #
-# Example facade:
+# A Pigweed facade is an API layer that has a single implementation it must
+# link against. Typically this will be done by pointing a build arg like
+# `pw_[module]_BACKEND` at a backend implementation for that module.
 #
-#   pw_facade("module_name") {
-#     backend = dir_module_name_backend
-#     public_deps = [
-#       ":module_api_layer"
-#     ]
+# pw_facade creates two targets:
+#
+#   $target_name: The public-facing pw_source_set that provides the API and
+#     implementation (backend). Users of the facade should depend on this.
+#   $target_name.facade: A private source_set that provides ONLY the API. ONLY
+#     backends should depend on this.
+#
+# The facade's headers are split out into the *.facade target to avoid circular
+# dependencies. Here's a concrete example to illustrate why this is needed:
+#
+#   foo_BACKEND = "//foo:foo_backend_bar"
+#
+#   pw_facade("foo") {
+#     backend = foo_BACKEND
+#     public = [ "foo.h" ]
+#     sources = [ "foo.cc" ]
 #   }
 #
+#   pw_source_set("foo_backend_bar") {
+#     deps = [ ":foo.facade" ]
+#     sources = [ "bar.cc" ]
+#   }
+#
+# This creates the following dependency graph:
+#
+#   foo.facade  <-.
+#    ^             \
+#    |              \
+#    |               \
+#   foo  ---------->  foo_backend_bar
+#
+# This allows foo_backend_bar to include "foo.h". If you tried to directly
+# depend on `foo` from `foo_backend_bar`, you'd get a dependency cycle error in
+# GN.
+#
+# Accepts the standard pw_source_set args with the following additions:
+#
 # Args:
-#  - backend: the dependency that implements this facade
-#  - facade_name: (optional) The name to use for the facade target on which the
-#        backend depends. Only required when a module defines multiple facades.
-#        Defaults to "facade".
+#  backend: (required) The dependency that implements this facade (a GN
+#    variable)
+#  public: (required) The headers exposed by this facade. A facade acts as a
+#    tool to break dependency cycles that come from the backend trying to
+#    include headers from the facade itself. If the facade doesn't expose any
+#    headers, it's basically the same as just depending directly on the build
+#    arg that `backend` is set to.
 #
 template("pw_facade") {
   assert(defined(invoker.backend),
          "pw_facade requires a reference to a backend variable for the facade")
+  assert(defined(invoker.public),
+         "If your facade does not explicitly expose an API that a backend " +
+             "must depend on, you can just directly depend on the build arg " +
+             "that the `backend` template argument would have been set to.")
 
-  if (defined(invoker.facade_name)) {
-    _facade_name = invoker.facade_name
-  } else {
-    _facade_name = "facade"
+  _facade_name = "$target_name.facade"
+
+  if (get_path_info(get_label_info(":$target_name", "dir"), "name") ==
+      get_label_info(":$target_name", "name")) {
+    group("facade") {
+      public_deps = [ ":$_facade_name" ]
+    }
   }
 
-  # A facade's headers are split into a separate target to avoid a circular
-  # dependency between the facade and the backend.
-  #
-  # For example, the following targets:
-  #
-  #   foo_backend = "//foo:foo_backend_bar"
-  #
-  #   pw_facade("foo") {
-  #     backend = foo_backend
-  #     public = [ "foo.h" ]
-  #     sources = [ "foo.cc" ]
-  #   }
-  #
-  #   pw_source_set("foo_backend_bar") {
-  #     deps = [ ":facade" ]
-  #     sources = [ "bar.cc" ]
-  #   }
-  #
-  # Create the following dependency graph:
-  #
-  #   facade  <-.
-  #    ^         \
-  #    |          \
-  #    |           \
-  #   foo  ------>  foo_backend_bar
-  #
+  # For backwards compatibility, provide a _facade version of the name.
+  group(target_name + "_facade") {
+    public_deps = [ ":$_facade_name" ]
+  }
+
   _facade_vars = [
     "public_configs",
     "public_deps",
@@ -89,9 +107,9 @@ template("pw_facade") {
     # error message.
     _main_target_name = target_name
 
-    pw_python_script(_main_target_name + "_NO_BACKEND_SET") {
+    pw_python_action(_main_target_name + ".NO_BACKEND_SET") {
       stamp = true
-      script = "$dir_pw_build/py/null_backend.py"
+      script = "$dir_pw_build/py/pw_build/null_backend.py"
       args = [ _main_target_name ]
       not_needed(invoker, "*")
     }
@@ -111,8 +129,8 @@ template("pw_facade") {
     if (invoker.backend != "") {
       public_deps += [ invoker.backend ]
     } else {
-      # If the backend is not set, depend on the *_NO_BACKEND_SET target.
-      public_deps += [ ":$_main_target_name" + "_NO_BACKEND_SET" ]
+      # If the backend is not set, depend on the *.NO_BACKEND_SET target.
+      public_deps += [ ":$_main_target_name" + ".NO_BACKEND_SET" ]
     }
   }
 }

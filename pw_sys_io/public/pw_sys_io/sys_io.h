@@ -20,7 +20,7 @@
 //
 // This facade doesn't dictate any policies on input and output data encoding,
 // format, or transmission protocol. It only requires that backends return a
-// Status::OK if the operation succeeds. Backends may provide useful error
+// Status::Ok() if the operation succeeds. Backends may provide useful error
 // Status types, but depending on the implementation-specific Status values is
 // NOT recommended. Since this facade provides a very vague I/O interface, it
 // does NOT provide tests. Backends are expected to provide their own testing to
@@ -37,9 +37,9 @@
 
 #include <cstddef>
 #include <cstring>
+#include <span>
 #include <string_view>
 
-#include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
 
@@ -51,8 +51,17 @@ namespace pw::sys_io {
 // This function will block until it either succeeds or fails to read a byte
 // from the pw_sys_io backend.
 //
-// Returns Status::OK if a byte was successfully read.
+// Returns Status::Ok() - A byte was successfully read.
+//         Status::ResourceExhausted() - if the underlying source vanished.
 Status ReadByte(std::byte* dest);
+
+// Read a single byte from the sys io backend, if available.
+// Implemented by: Backend
+//
+// Returns Status::Ok() - A byte was successfully read, and is in dest.
+//         Status::Unavailable() - No byte is available to read; try later.
+//         Status::Unimplemented() - Not supported on this target.
+Status TryReadByte(std::byte* dest);
 
 // Write a single byte out the sys io backend.
 // Implemented by: Backend
@@ -60,7 +69,7 @@ Status ReadByte(std::byte* dest);
 // This function will block until it either succeeds or fails to write a byte
 // out the pw_sys_io backend.
 //
-// Returns Status::OK if a byte was successfully read.
+// Returns Status::Ok() if a byte was successfully read.
 Status WriteByte(std::byte b);
 
 // Write a string out the sys io backend.
@@ -70,12 +79,12 @@ Status WriteByte(std::byte b);
 // backend, adding any platform-specific newline character(s) (these are
 // accounted for in the returned StatusWithSize).
 //
-// Return status is Status::OK if all the bytes from the source string were
+// Return status is Status::Ok() if all the bytes from the source string were
 // successfully written. In all cases, the number of bytes successfully written
 // are returned as part of the StatusWithSize.
 StatusWithSize WriteLine(const std::string_view& s);
 
-// Fill a byte span from the sys io backend using ReadByte().
+// Fill a byte std::span from the sys io backend using ReadByte().
 // Implemented by: Facade
 //
 // This function is implemented by this facade and simply uses ReadByte() to
@@ -84,12 +93,12 @@ StatusWithSize WriteLine(const std::string_view& s);
 // undefined. This function blocks until either an error occurs, or all bytes
 // are successfully read from the backend's ReadByte() implementation.
 //
-// Return status is Status::OK if the destination span was successfully filled.
-// In all cases, the number of bytes successuflly read to the destination span
-// are returned as part of the StatusWithSize.
-StatusWithSize ReadBytes(span<std::byte> dest);
+// Return status is Status::Ok() if the destination span was successfully
+// filled. In all cases, the number of bytes successuflly read to the
+// destination span are returned as part of the StatusWithSize.
+StatusWithSize ReadBytes(std::span<std::byte> dest);
 
-// Write span of bytes out the sys io backend using WriteByte().
+// Write std::span of bytes out the sys io backend using WriteByte().
 // Implemented by: Facade
 //
 // This function is implemented by this facade and simply writes the source
@@ -98,9 +107,9 @@ StatusWithSize ReadBytes(span<std::byte> dest);
 // either an error occurs, or all bytes are successfully read from the backend's
 // WriteByte() implementation.
 //
-// Return status is Status::OK if all the bytes from the source span were
+// Return status is Status::Ok() if all the bytes from the source span were
 // successfully written. In all cases, the number of bytes successfully written
 // are returned as part of the StatusWithSize.
-StatusWithSize WriteBytes(span<const std::byte> src);
+StatusWithSize WriteBytes(std::span<const std::byte> src);
 
 }  // namespace pw::sys_io

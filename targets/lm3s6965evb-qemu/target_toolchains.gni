@@ -12,10 +12,11 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# gn-format disable
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_sys_io/backend.gni")
 import("$dir_pw_toolchain/arm_gcc/toolchains.gni")
+
 _test_runner_script = "py/lm3s6965evb_qemu_utils/unit_test_runner.py"
 
 _target_config = {
@@ -33,9 +34,6 @@ _target_config = {
 
   pw_unit_test_AUTOMATIC_RUNNER = get_path_info(_test_runner_script, "abspath")
 
-  # Tell QEMU to shut down after running a binary.
-  pw_boot_armv7m_QEMU_SHUTDOWN = true
-
   # Facade backends
   pw_assert_BACKEND = dir_pw_assert_basic
   pw_boot_BACKEND = dir_pw_boot_armv7m
@@ -46,7 +44,7 @@ _target_config = {
   # appear the divide-by-zero traps as expected when enabled, which prevents the
   # module from triggering a recoverable exception. Since pw_cpu_exception is
   # not fully set up on this target, disable it for now.
-  # pw_cpu_exception_BACKEND = dir_pw_cpu_exception_armv7m
+  # pw_cpu_exception_ENTRY_BACKEND = dir_pw_cpu_exception_armv7m
 
   pw_boot_armv7m_LINK_CONFIG_DEFINES = [
     "PW_BOOT_FLASH_BEGIN=0x00000200",
@@ -58,7 +56,15 @@ _target_config = {
     "PW_BOOT_VECTOR_TABLE_BEGIN=0x00000000",
     "PW_BOOT_VECTOR_TABLE_SIZE=512",
   ]
+
+  current_cpu = "arm"
+  current_os = ""
 }
+
+_target_default_configs = [
+  "$dir_pw_build:extra_strict_warnings",
+  "$dir_pw_toolchain/arm_gcc:enable_float_printf",
+]
 
 pw_target_toolchain_lm3s6965evb_qemu = {
   _excluded_members = [
@@ -73,6 +79,7 @@ pw_target_toolchain_lm3s6965evb_qemu = {
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_target_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -83,6 +90,7 @@ pw_target_toolchain_lm3s6965evb_qemu = {
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_target_config, "*")
+      default_configs += _target_default_configs
     }
   }
 
@@ -93,6 +101,7 @@ pw_target_toolchain_lm3s6965evb_qemu = {
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
       forward_variables_from(_target_config, "*")
+      default_configs += _target_default_configs
     }
   }
 }

@@ -15,29 +15,44 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 
 #include "pw_allocator/block.h"
 #include "pw_allocator/freelist.h"
-#include "pw_span/span.h"
 
 namespace pw::allocator {
 
 class FreeListHeap {
  public:
-  FreeListHeap(span<std::byte> region, FreeList& freelist);
+  template <size_t N>
+  friend class FreeListHeapBuffer;
+  struct HeapStats {
+    size_t total_bytes;
+    size_t bytes_allocated;
+    size_t cumulative_allocated;
+    size_t cumulative_freed;
+    size_t total_allocate_calls;
+    size_t total_free_calls;
+  };
+  FreeListHeap(std::span<std::byte> region, FreeList& freelist);
 
   void* Allocate(size_t size);
   void Free(void* ptr);
   void* Realloc(void* ptr, size_t size);
   void* Calloc(size_t num, size_t size);
 
+  void LogHeapStats();
+
  private:
-  span<std::byte> BlockToSpan(Block* block) {
-    return span<std::byte>(block->UsableSpace(), block->InnerSize());
+  std::span<std::byte> BlockToSpan(Block* block) {
+    return std::span<std::byte>(block->UsableSpace(), block->InnerSize());
   }
 
-  span<std::byte> region_;
+  void InvalidFreeCrash();
+
+  std::span<std::byte> region_;
   FreeList& freelist_;
+  HeapStats heap_stats_;
 };
 
 template <size_t N = 6>
@@ -46,13 +61,19 @@ class FreeListHeapBuffer {
   static constexpr std::array<size_t, N> defaultBuckets{
       16, 32, 64, 128, 256, 512};
 
-  FreeListHeapBuffer(span<std::byte> region)
+  FreeListHeapBuffer(std::span<std::byte> region)
       : freelist_(defaultBuckets), heap_(region, freelist_) {}
 
   void* Allocate(size_t size) { return heap_.Allocate(size); }
   void Free(void* ptr) { heap_.Free(ptr); }
   void* Realloc(void* ptr, size_t size) { return heap_.Realloc(ptr, size); }
   void* Calloc(size_t num, size_t size) { return heap_.Calloc(num, size); }
+
+  const FreeListHeap::HeapStats& heap_stats() const {
+    return heap_.heap_stats_;
+  };
+
+  void LogHeapStats() { heap_.LogHeapStats(); }
 
  private:
   FreeListBuffer<N> freelist_;

@@ -11,21 +11,20 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-//==============================================================================
-//
+
 // This file describes Pigweed's public user-facing logging API.
 //
 // THIS PUBLIC API IS NOT STABLE OR COMPLETE!
 //
 // Key functionality is still missing:
 //
-// - API for controlling verbosity at compile time
 // - API for controlling verbosity at run time
 // - API for querying if logging is enabled for the given level or flags
 //
 #pragma once
 
 #include "pw_log/levels.h"
+#include "pw_log/options.h"
 
 // log_backend.h must ultimately resolve to a header that implements the macros
 // required by the logging facade, as described below.
@@ -34,6 +33,10 @@
 //
 //   PW_LOG_MODULE_NAME
 //     - The module name the backend should use
+//
+//   PW_LOG_LEVEL
+//     - General log level setting. By default, logs below this level are
+//       excluded from the build.
 //
 // Outputs: Macros log_backend.h is expected to provide:
 //
@@ -58,36 +61,6 @@
 //
 #include "pw_log_backend/log_backend.h"
 
-// Default: Module name
-#ifndef PW_LOG_MODULE_NAME
-#define PW_LOG_MODULE_NAME ""
-#endif  // PW_LOG_MODULE_NAME
-
-// Default: Flags
-// For log statements like LOG_INFO that don't have an explicit argument, this
-// is used for the flags value.
-#ifndef PW_LOG_DEFAULT_FLAGS
-#define PW_LOG_DEFAULT_FLAGS 0
-#endif  // PW_LOG_DEFAULT_FLAGS
-
-// Default: Log level filtering
-//
-// All log statements have a level, and this define is the default filtering.
-// This is compile-time filtering if the level is a constant.
-//
-// TODO(pwbug/17): Convert this to the config system when available.
-#ifndef PW_LOG_LEVEL
-#define PW_LOG_LEVEL PW_LOG_LEVEL_DEBUG
-#endif  // PW_LOG_LEVEL
-
-// Default: Log enabled expression
-//
-// This expression determines whether or not the statement is enabled and
-// should be passed to the backend.
-#ifndef PW_LOG_ENABLE_IF
-#define PW_LOG_ENABLE_IF(level, flags) ((level) >= PW_LOG_LEVEL)
-#endif  // PW_LOG_ENABLE_IF
-
 #ifndef PW_LOG
 #define PW_LOG(level, flags, message, ...)               \
   do {                                                   \
@@ -95,7 +68,7 @@
       PW_HANDLE_LOG(level, flags, message, __VA_ARGS__); \
     }                                                    \
   } while (0)
-#endif  // PW_LOG_DEBUG
+#endif  // PW_LOG
 
 // For backends that elect to only provide the general PW_LOG() macro and not
 // specialized versions, define the standard PW_LOG_<level>() macros in terms
@@ -124,6 +97,24 @@
 #define PW_LOG_CRITICAL(message, ...) \
   PW_LOG(PW_LOG_LEVEL_CRITICAL, PW_LOG_DEFAULT_FLAGS, message, __VA_ARGS__)
 #endif  // PW_LOG_CRITICAL
+
+// Default: Number of bits available for the log level
+//
+// All log statements have a level, and this define is the number of bits
+// available for the level. Some backends restrict this for better efficiency.
+// By default, pick a restricted but large enough value to work for most cases.
+#ifndef PW_LOG_LEVEL_BITS
+#define PW_LOG_LEVEL_BITS 6
+#endif  // PW_LOG_LEVEL_BITS
+
+// Default: Number of bits available for the log flags
+//
+// All log statements have a flags field, and this define is the number of bits
+// available for the flags. Some backends restrict this for better efficiency.
+// By default, pick a restricted but large enough value to work for most cases.
+#ifndef PW_LOG_FLAG_BITS
+#define PW_LOG_FLAG_BITS 10
+#endif  // PW_LOG_FLAG_BITS
 
 // Define short, usable names if requested.
 // TODO(pwbug/17): Convert this to the config system when available.

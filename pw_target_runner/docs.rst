@@ -1,8 +1,4 @@
-.. _chapter-target-runner:
-
-.. default-domain:: cpp
-
-.. highlight:: sh
+.. _module-pw_target_runner:
 
 ----------------
 pw_target_runner

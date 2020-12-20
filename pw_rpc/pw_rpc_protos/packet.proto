@@ -15,26 +15,55 @@ syntax = "proto3";
 
 package pw.rpc.internal;
 
-enum PacketType { RPC = 0; };
+option java_package = "dev.pigweed.pw.rpc.internal";
+
+enum PacketType {
+  // To simplify identifying the origin of a packet, client-to-server packets
+  // use even numbers and server-to-client packets use odd numbers.
+
+  // Client-to-server packets
+
+  // A request from a client for a service method.
+  REQUEST = 0;
+
+  // A client stream has completed.
+  CLIENT_STREAM_END = 2;
+
+  // The client received a packet for an RPC it did not request.
+  CLIENT_ERROR = 4;
+
+  // The client requests cancellation of an ongoing server stream.
+  CANCEL_SERVER_STREAM = 6;
+
+  // Server-to-client packets
+
+  // A response from a server for a service method.
+  RESPONSE = 1;
+
+  // A server streaming or bidirectional RPC has completed.
+  SERVER_STREAM_END = 3;
+
+  // The server was unable to process a request.
+  SERVER_ERROR = 5;
+}
 
 message RpcPacket {
-  // The type of packet. Either a general RPC packet or a specific control
-  // packet. Required.
+  // The type of packet. Determines which other fields are used.
   PacketType type = 1;
 
-  // Channel through which the packet is sent. Required.
+  // Channel through which the packet is sent.
   uint32 channel_id = 2;
 
-  // Tokenized fully-qualified name of the service with which this packet is
+  // Hash of the fully-qualified name of the service with which this packet is
   // associated. For RPC packets, this is the service that processes the packet.
-  uint32 service_id = 3;
+  fixed32 service_id = 3;
 
-  // Tokenized name of the method which should process this packet.
-  uint32 method_id = 4;
+  // Hash of the name of the method which should process this packet.
+  fixed32 method_id = 4;
 
-  // The packet's payload.
+  // The packet's payload, which is an encoded protobuf.
   bytes payload = 5;
 
-  // RPC response status code.
+  // Status code for the RPC response or error.
   uint32 status = 6;
-};
+}

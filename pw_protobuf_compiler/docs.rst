@@ -1,58 +1,59 @@
-.. default-domain:: py
-
-.. highlight:: py
-
-.. _chapter-pw-protobuf-compiler:
+.. _module-pw_protobuf_compiler:
 
 --------------------
 pw_protobuf_compiler
 --------------------
-
 The Protobuf compiler module provides build system integration and wrapper
 scripts for generating source code for Protobuf definitions.
 
 Generator support
 =================
-
 Protobuf code generation is currently supported for the following generators:
 
-+-------------+------------+---------------------------------------------------+
-| Generator   | Code       | Notes                                             |
-+-------------+------------+---------------------------------------------------+
-| pw_protobuf | ``pwpb``   | Compiles using ``pw_protobuf``.                   |
-+-------------+------------+---------------------------------------------------+
-| Go          | ``go``     | Compiles using the standard Go protobuf plugin    |
-|             |            | with gRPC service support.                        |
-+-------------+------------+---------------------------------------------------+
-| Nanopb      | ``nanopb`` | Compiles using Nanopb. The build argument         |
-|             |            | ``dir_pw_third_party_nanopb`` must be set to      |
-|             |            | point to a local nanopb installation.             |
-+-------------+------------+---------------------------------------------------+
-
-The build variable ``pw_protobuf_GENERATORS`` tells the module the generators
-for which it should compile code. It is defined as a list of generator codes.
++-------------+----------------+-----------------------------------------------+
+| Generator   | Code           | Notes                                         |
++-------------+----------------+-----------------------------------------------+
+| pw_protobuf | ``pwpb``       | Compiles using ``pw_protobuf``.               |
++-------------+----------------+-----------------------------------------------+
+| Nanopb      | ``nanopb``     | Compiles using Nanopb. The build argument     |
+|             |                | ``dir_pw_third_party_nanopb`` must be set to  |
+|             |                | point to a local nanopb installation.         |
++-------------+----------------+-----------------------------------------------+
+| Nanopb RPC  | ``nanopb_rpc`` | Compiles pw_rpc service and client code for   |
+|             |                | nanopb. Requires a nanopb installation.       |
++-------------+----------------+-----------------------------------------------+
+| Raw RPC     | ``raw_rpc``    | Compiles raw binary pw_rpc service code.      |
++-------------+----------------+-----------------------------------------------+
+| Go          | ``go``         | Compiles using the standard Go protobuf       |
+|             |                | plugin with gRPC service support.             |
++-------------+----------------+-----------------------------------------------+
+| Python      | ``python``     | Compiles using the standard Python protobuf   |
+|             |                | plugin, creating a ``pw_python_package``.     |
++-------------+----------------+-----------------------------------------------+
 
 GN template
 ===========
-
 The ``pw_proto_library`` GN template is provided by the module.
 
-It tells the build system to compile a set of source proto files to a library in
-each chosen generator. A different target is created for each generator, with
-the generator's code appended as a suffix to the template's target name.
+It defines a collection of protobuf files that should be compiled together. The
+template creates a sub-target for each supported generator, named
+``<target_name>.<generator>``. These sub-targets generate their respective
+protobuf code, and expose it to the build system appropriately (e.g. a
+``pw_source_set`` for C/C++).
 
-For example, given the definitions:
+For example, given the following target:
 
-.. code::
-
-  pw_protobuf_GENERATORS = [ "pwpb", "py" ]
+.. code-block::
 
   pw_proto_library("test_protos") {
     sources = [ "test.proto" ]
   }
 
-Two targets are created, named ``test_protos_pwpb`` and ``test_protos_py``,
-containing the generated code from their respective generators.
+``test_protos.pwpb`` compiles code for pw_protobuf, and ``test_protos.nanopb``
+compiles using Nanopb (if it's installed).
+
+Protobuf code is only generated when a generator sub-target is listed as a
+dependency of another GN target.
 
 **Arguments**
 
@@ -74,11 +75,11 @@ containing the generated code from their respective generators.
 
   pw_proto_library("my_other_protos") {
     sources = [
-      "baz.proto", # imports foo.proto
+      "baz.proto",  # imports foo.proto
     ]
-    deps = [
-      ":my_protos",
-    ]
+
+    # Proto libraries depend on other proto libraries directly.
+    deps = [ ":my_protos" ]
   }
 
   source_set("my_cc_code") {
@@ -87,7 +88,7 @@ containing the generated code from their respective generators.
       "bar.cc",
       "baz.cc",
     ]
-    deps = [
-      ":my_other_protos_cc",
-    ]
+
+    # When depending on protos in a source_set, specify the generator suffix.
+    deps = [ ":my_other_protos.pwpb" ]
   }

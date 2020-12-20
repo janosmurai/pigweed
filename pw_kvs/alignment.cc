@@ -14,16 +14,16 @@
 
 #include "pw_kvs/alignment.h"
 
-#include "pw_kvs_private/macros.h"
+#include "pw_status/try.h"
 
 namespace pw {
 
-StatusWithSize AlignedWriter::Write(span<const std::byte> data) {
+StatusWithSize AlignedWriter::Write(std::span<const std::byte> data) {
   while (!data.empty()) {
     size_t to_copy = std::min(write_size_ - bytes_in_buffer_, data.size());
 
     std::memcpy(&buffer_[bytes_in_buffer_], data.data(), to_copy);
-    TRY_WITH_SIZE(AddBytesToBuffer(to_copy));
+    PW_TRY_WITH_SIZE(AddBytesToBuffer(to_copy));
     data = data.subspan(to_copy);
   }
 
@@ -58,7 +58,7 @@ StatusWithSize AlignedWriter::Write(Input& input, size_t size) {
     if (!result.ok()) {
       return StatusWithSize(result.status(), bytes_written_);
     }
-    TRY_WITH_SIZE(AddBytesToBuffer(to_read));
+    PW_TRY_WITH_SIZE(AddBytesToBuffer(to_read));
     size -= result.size();
   }
 

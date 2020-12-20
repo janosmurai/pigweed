@@ -13,8 +13,8 @@ express setup configures Pigweed's watcher for three targets to give a taste of
 Pigweed:
 
 1. **Host** - Mac, Linux, or Windows. Builds and runs tests
-2. **Device/STM32F429** - Build only; see later in the guide to run tests on
-   device
+2. **Device/STM32F429** - Build only; Optionally, the STM32F429I-DISC1 kit to
+   follow along later in the guide to run tests directly on said device(s)
 3. **Docs** - Builds the Pigweed docs
 
 To get setup:
@@ -43,7 +43,7 @@ Done. Made 1047 targets from 91 files in 114ms
 (4) Start the watcher. The watcher will invoke Ninja to build all the targets
 
 ```bash
-$ pw watch out default stm32f429i
+$ pw watch
 
  ▒█████▄   █▓  ▄███▒  ▒█    ▒█ ░▓████▒ ░▓████▒ ▒▓████▄
   ▒█░  █░ ░█▒ ██▒ ▀█▒ ▒█░ █ ▒█  ▒█   ▀  ▒█   ▀  ▒█  ▀█▌
@@ -51,14 +51,10 @@ $ pw watch out default stm32f429i
   ▒█▀     ░█░ ▓█   █▓ ░█░ █ ▒█  ▒█   ▄  ▒█   ▄  ░█  ▄█▌
   ▒█      ░█░ ░▓███▀   ▒█▓▀▓█░ ░▓████▒ ░▓████▒ ▒▓████▀
 
-20200319 01:41:37 INF Starting Pigweed build watcher
-20200319 01:41:37 INF Searching for GN build dirs...
-20200319 01:41:37 INF Will build [1/3]: out/host
-20200319 01:41:37 INF Will build [2/3]: out/disco
-20200319 01:41:37 INF Will build [3/3]: out/docs
-20200319 01:41:39 INF Directory to watch: $HOME/wrk/pigweed
-20200319 01:41:39 INF Watching for file changes. Ctrl-C exits.
-20200319 01:41:39 INF Triggering initial build...
+20200707 17:24:06 INF Starting Pigweed build watcher
+20200707 17:24:06 INF Will build [1/1]: out
+20200707 17:24:06 INF Attaching filesystem watcher to $HOME/wrk/pigweed/...
+20200707 17:24:06 INF Triggering initial build...
 ...
 ```
 
@@ -81,7 +77,7 @@ $ pw watch out default stm32f429i
 See below for equivalent Windows commands, and for more details on what each
 part does.
 
-**Note:** After running bootstrap once, use `. ./activate.sh` (or
+**Note:** After running bootstrap once, use `source ./activate.sh` (or
 `activate.bat` on Windows) to re-activate the environment without
 re-bootstrapping.
 
@@ -153,7 +149,7 @@ environment in a new session with the following command:
 
 **Linux/macOS**
 ```bash
-$ . ./activate.sh
+$ source ./activate.sh
 ```
 
 **Windows**
@@ -229,39 +225,31 @@ be re-built and re-run.
 
 Try running the `pw_status` test manually:
 ```bash
-$ ./host_[compiler]/obj/pw_status/status_test
+$ ./out/host_{clang,gcc}_debug/obj/pw_status/test/status_test
 ```
 
-Depending on your host OS, `[compiler]` will default to either Clang or GCC.
+Depending on your host OS, the compiler will default to either `clang` or `gcc`.
 
 ## Building for a Device
 
-As mentioned previously, Pigweed builds for host by default. In the context of
-Pigweed, a Pigweed "target" is a build configuration that includes a toolchain,
-default library configurations, and more to result in binaries that run
-natively on the target.
+A Pigweed "target" is a build configuration that includes a toolchain, default
+library configurations, and more to result in binaries that run natively on the
+target. With the default build invocation, you're already building for a device
+target (the STMicroelectronics STM32F429I-DISC1) in parallel with the host
+build!
 
-Switch to the window running `pw_watch`, and quit using `ctrl+c`. To get
-`pw_watch` to build the new STM32F429I-DISC1 target, re-launch by specifying
-which Ninja targets to build:
+If you want to build JUST for the device, you can kick of watch with:
 
 ```bash
-$ pw watch out default stm32f429i
+$ pw watch stm32f429i
 ```
 
 This is equivalent to the following Ninja invocation:
 
 ```bash
-$ ninja -C out default stm32f429i
+$ ninja -C out stm32f429i
 ```
 
-Or since the "default" target builds host and docs,
-
-```bash
-$ ninja -C out host docs stm32f429i
-```
-
-Now `pw_watch` is building for host and a device!
 
 ## Running Tests on a Device
 
@@ -275,7 +263,10 @@ tests directly on the device.
 Connect any number of STM32F429I-DISC1 boards to your computer using the mini
 USB port on the board (**not** the micro USB). Pigweed will automatically detect
 the boards and distribute the tests across the devices. More boards = faster
-tests!
+tests! Keep in mind that you may have to make some environment specific updates
+to ensure you have permissions to use the USB device. For example, on Linux you
+may need to update your udev rules and ensure you're in the plugdev and dialout
+groups.
 
 ![development boards connected via USB](images/stm32f429i-disc1_connected.jpg)
 
@@ -298,7 +289,7 @@ We can tell GN to use the testing server by enabling a build arg specific to
 the stm32f429i-disc1 target.
 
 ```shell
-$ gn args out/disco
+$ gn args out
 # Append this line to the file that opens in your editor to tell GN to run
 # on-device unit tests.
 pw_use_test_server = true
@@ -316,10 +307,13 @@ See the demo below for an example of what this all looks like put together:
 ## Building the Documentation
 
 In addition to the markdown documentation, Pigweed has a collection of
-information-rich RST files that are built by the default invocation of GN. You
-will find the documents at `out/docs/gen/docs/html`.
+information-rich RST files that are used to generate HTML documentation. All the
+docs are hosted at https://pigweed.dev/, and are built as a part of the default
+build invocation. This makes it easier to make changes and see how they turn
+out. Once built, you can find the rendered HTML documentation at
+`out/docs/gen/docs/html`.
 
-You can build the documentation manually by with the command below.
+You can explicitly build just the documentation with the command below.
 
 ```shell
 $ ninja -C out docs

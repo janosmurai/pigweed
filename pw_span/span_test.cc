@@ -20,11 +20,11 @@
 //
 // In order to minimize changes from the original, this file does NOT fully
 // adhere to Pigweed's style guide.
-#include "pw_span/span.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -38,7 +38,7 @@ using ::testing::Eq;
 using ::testing::Pointwise;
 #endif  // 0
 
-namespace pw {
+namespace std {
 
 namespace {
 
@@ -1629,4 +1629,4 @@ TEST(SpanTest, IteratorConversions) {
                 "Error: const iterator should not be convertible to iterator");
 }
 
-}  // namespace pw
+}  // namespace std

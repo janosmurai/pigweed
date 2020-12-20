@@ -15,11 +15,13 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstring>
 
+#include "pw_bytes/endian.h"
+#include "pw_bytes/span.h"
 #include "pw_preprocessor/compiler.h"
-#include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
 
@@ -32,11 +34,174 @@ namespace pw {
 // A ByteBuilder does not own the buffer it writes to. It can be used to write
 // bytes to any buffer. The ByteBuffer template class, defined below,
 // allocates a buffer alongside a ByteBuilder.
-
 class ByteBuilder {
  public:
+  // iterator class will allow users of ByteBuilder and ByteBuffer to access
+  // the data stored in the buffer. It has the functionality of C++'s
+  // random access iterator.
+  class iterator {
+   public:
+    using difference_type = ptrdiff_t;
+    using value_type = std::byte;
+    using pointer = std::byte*;
+    using reference = std::byte&;
+    using iterator_category = std::random_access_iterator_tag;
+
+    explicit constexpr iterator(const std::byte* byte_ptr) : byte_(byte_ptr) {}
+
+    constexpr iterator& operator++() {
+      byte_ += 1;
+      return *this;
+    }
+
+    constexpr iterator operator++(int) {
+      iterator previous(byte_);
+      operator++();
+      return previous;
+    }
+
+    constexpr iterator& operator--() {
+      byte_ -= 1;
+      return *this;
+    }
+
+    constexpr iterator operator--(int) {
+      iterator previous(byte_);
+      operator--();
+      return previous;
+    }
+
+    constexpr iterator operator+=(int n) {
+      byte_ += n;
+      return *this;
+    }
+
+    constexpr iterator operator+(int n) const { return iterator(byte_ + n); }
+
+    constexpr iterator operator-=(int n) { return operator+=(-n); }
+
+    constexpr iterator operator-(int n) const { return iterator(byte_ - n); }
+
+    constexpr ptrdiff_t operator-(const iterator& rhs) const {
+      return byte_ - rhs.byte_;
+    }
+
+    constexpr bool operator==(const iterator& rhs) const {
+      return byte_ == rhs.byte_;
+    }
+
+    constexpr bool operator!=(const iterator& rhs) const {
+      return byte_ != rhs.byte_;
+    }
+
+    constexpr bool operator<(const iterator& rhs) const {
+      return byte_ < rhs.byte_;
+    }
+
+    constexpr bool operator>(const iterator& rhs) const {
+      return byte_ > rhs.byte_;
+    }
+
+    constexpr bool operator<=(const iterator& rhs) const {
+      return !operator>(rhs);
+    }
+
+    constexpr bool operator>=(const iterator& rhs) const {
+      return !operator<(rhs);
+    }
+
+    constexpr const std::byte& operator*() const { return *byte_; }
+
+    constexpr const std::byte& operator[](int index) const {
+      return byte_[index];
+    }
+
+    // The Peek methods will retreive ordered (Little/Big Endian) values
+    // located at the iterator position without moving the iterator forward.
+    int8_t PeekInt8() const { return static_cast<int8_t>(PeekUint8()); }
+
+    uint8_t PeekUint8() const {
+      return bytes::ReadInOrder<uint8_t>(std::endian::little, byte_);
+    }
+
+    int16_t PeekInt16(std::endian order = std::endian::little) const {
+      return static_cast<int16_t>(PeekUint16(order));
+    }
+
+    uint16_t PeekUint16(std::endian order = std::endian::little) const {
+      return bytes::ReadInOrder<uint16_t>(order, byte_);
+    }
+
+    int32_t PeekInt32(std::endian order = std::endian::little) const {
+      return static_cast<int32_t>(PeekUint32(order));
+    }
+
+    uint32_t PeekUint32(std::endian order = std::endian::little) const {
+      return bytes::ReadInOrder<uint32_t>(order, byte_);
+    }
+
+    int64_t PeekInt64(std::endian order = std::endian::little) const {
+      return static_cast<int64_t>(PeekUint64(order));
+    }
+
+    uint64_t PeekUint64(std::endian order = std::endian::little) const {
+      return bytes::ReadInOrder<uint64_t>(order, byte_);
+    }
+
+    // The Read methods will retreive ordered (Little/Big Endian) values
+    // located at the iterator position and move the iterator forward by
+    // sizeof(value) positions forward.
+    int8_t ReadInt8() { return static_cast<int8_t>(ReadUint8()); }
+
+    uint8_t ReadUint8() {
+      uint8_t value = bytes::ReadInOrder<uint8_t>(std::endian::little, byte_);
+      byte_ += 1;
+      return value;
+    }
+
+    int16_t ReadInt16(std::endian order = std::endian::little) {
+      return static_cast<int16_t>(ReadUint16(order));
+    }
+
+    uint16_t ReadUint16(std::endian order = std::endian::little) {
+      uint16_t value = bytes::ReadInOrder<uint16_t>(order, byte_);
+      byte_ += 2;
+      return value;
+    }
+
+    int32_t ReadInt32(std::endian order = std::endian::little) {
+      return static_cast<int32_t>(ReadUint32(order));
+    }
+
+    uint32_t ReadUint32(std::endian order = std::endian::little) {
+      uint32_t value = bytes::ReadInOrder<uint32_t>(order, byte_);
+      byte_ += 4;
+      return value;
+    }
+
+    int64_t ReadInt64(std::endian order = std::endian::little) {
+      return static_cast<int64_t>(ReadUint64(order));
+    }
+
+    uint64_t ReadUint64(std::endian order = std::endian::little) {
+      int64_t value = bytes::ReadInOrder<int64_t>(order, byte_);
+      byte_ += 8;
+      return value;
+    }
+
+   private:
+    const std::byte* byte_;
+  };
+
+  using element_type = const std::byte;
+  using value_type = std::byte;
+  using pointer = std::byte*;
+  using reference = std::byte&;
+  using iterator = iterator;
+  using const_iterator = iterator;
+
   // Creates an empty ByteBuilder.
-  constexpr ByteBuilder(span<std::byte> buffer) : buffer_(buffer), size_(0) {}
+  constexpr ByteBuilder(ByteSpan buffer) : buffer_(buffer), size_(0) {}
 
   // Disallow copy/assign to avoid confusion about where the bytes is actually
   // stored. ByteBuffers may be copied into one another.
@@ -63,31 +228,28 @@ class ByteBuilder {
     return StatusWithSize(status_, size_);
   }
 
-  // The status from the last operation. May be OK while status() is not OK.
-  Status last_status() const { return last_status_; }
-
-  // True if status() is Status::OK.
+  // True if status() is Status::Ok().
   bool ok() const { return status_.ok(); }
 
   // True if the bytes builder is empty.
   bool empty() const { return size() == 0u; }
 
-  // Returns the current length of the bytes, excluding the null terminator.
+  // Returns the current length of the bytes.
   size_t size() const { return size_; }
 
-  // Returns the maximum length of the bytes, excluding the null terminator.
+  // Returns the maximum length of the bytes.
   size_t max_size() const { return buffer_.size(); }
 
   // Clears the bytes and resets its error state.
-  void clear();
+  void clear() {
+    size_ = 0;
+    status_ = Status::Ok();
+  };
 
-  // Sets the statuses to Status::OK;
-  void clear_status() {
-    status_ = Status::OK;
-    last_status_ = Status::OK;
-  }
+  // Sets the statuses to Status::Ok();
+  void clear_status() { status_ = Status::Ok(); }
 
-  // Appends a single byte. Stets the status to RESOURCE_EXHAUSTED if the
+  // Appends a single byte. Sets the status to RESOURCE_EXHAUSTED if the
   // byte cannot be added because the buffer is full.
   void push_back(std::byte b) { append(1, b); }
 
@@ -97,16 +259,28 @@ class ByteBuilder {
     resize(size() - 1);
   }
 
+  // Root of bytebuffer wrapped in iterator type
+  const_iterator begin() const { return iterator(data()); }
+  const_iterator cbegin() const { return begin(); }
+
+  // End of bytebuffer wrapped in iterator type
+  const_iterator end() const { return iterator(data() + size()); }
+  const_iterator cend() const { return end(); }
+
+  // Front and Back C++ container functions
+  const std::byte& front() const { return buffer_[0]; }
+  const std::byte& back() const { return buffer_[size() - 1]; }
+
   // Appends the provided byte count times.
   ByteBuilder& append(size_t count, std::byte b);
 
   // Appends count bytes from 'bytes' to the end of the ByteBuilder. If count
-  // exceeds the remaining space in the ByteBuffer, max_size() - size()
-  // bytes are appended and the status is set to RESOURCE_EXHAUSTED.
+  // exceeds the remaining space in the ByteBuffer, no bytes will be appended
+  // and the status is set to RESOURCE_EXHAUSTED.
   ByteBuilder& append(const void* bytes, size_t count);
 
   // Appends bytes from a byte span that calls the pointer/length version.
-  ByteBuilder& append(span<std::byte> bytes) {
+  ByteBuilder& append(ConstByteSpan bytes) {
     return append(bytes.data(), bytes.size());
   }
 
@@ -114,26 +288,65 @@ class ByteBuilder {
   // new_size > size(), it sets status to OUT_OF_RANGE and does nothing.
   void resize(size_t new_size);
 
+  // Put methods for inserting different 8-bit ints
+  ByteBuilder& PutUint8(uint8_t val) { return WriteInOrder(val); }
+
+  ByteBuilder& PutInt8(int8_t val) { return WriteInOrder(val); }
+
+  // Put methods for inserting different 16-bit ints
+  ByteBuilder& PutUint16(uint16_t value,
+                         std::endian order = std::endian::little) {
+    return WriteInOrder(bytes::ConvertOrderTo(order, value));
+  }
+
+  ByteBuilder& PutInt16(int16_t value,
+                        std::endian order = std::endian::little) {
+    return PutUint16(static_cast<uint16_t>(value), order);
+  }
+
+  // Put methods for inserting different 32-bit ints
+  ByteBuilder& PutUint32(uint32_t value,
+                         std::endian order = std::endian::little) {
+    return WriteInOrder(bytes::ConvertOrderTo(order, value));
+  }
+
+  ByteBuilder& PutInt32(int32_t value,
+                        std::endian order = std::endian::little) {
+    return PutUint32(static_cast<uint32_t>(value), order);
+  }
+
+  // Put methods for inserting different 64-bit ints
+  ByteBuilder& PutUint64(uint64_t value,
+                         std::endian order = std::endian::little) {
+    return WriteInOrder(bytes::ConvertOrderTo(order, value));
+  }
+
+  ByteBuilder& PutInt64(int64_t value,
+                        std::endian order = std::endian::little) {
+    return PutUint64(static_cast<uint64_t>(value), order);
+  }
+
  protected:
   // Functions to support ByteBuffer copies.
-  constexpr ByteBuilder(const span<std::byte>& buffer, const ByteBuilder& other)
-      : buffer_(buffer),
-        size_(other.size_),
-        status_(other.status_),
-        last_status_(other.last_status_) {}
+  constexpr ByteBuilder(const ByteSpan& buffer, const ByteBuilder& other)
+      : buffer_(buffer), size_(other.size_), status_(other.status_) {}
 
-  void CopySizeAndStatus(const ByteBuilder& other);
+  void CopySizeAndStatus(const ByteBuilder& other) {
+    size_ = other.size_;
+    status_ = other.status_;
+  };
 
  private:
+  template <typename T>
+  ByteBuilder& WriteInOrder(T value) {
+    return append(&value, sizeof(value));
+  }
   size_t ResizeForAppend(size_t bytes_to_append);
 
-  void SetErrorStatus(Status status);
-
-  const span<std::byte> buffer_;
+  const ByteSpan buffer_;
 
   size_t size_;
   Status status_;
-  Status last_status_;
 };
 
 // ByteBuffers declare a buffer along with a ByteBuilder.

@@ -20,15 +20,15 @@ Status FindDecodeHandler::ProcessField(CallbackDecoder& decoder,
                                        uint32_t field_number) {
   if (field_number != field_number_) {
     // Continue to the next field.
-    return Status::OK;
+    return Status::Ok();
   }
 
   found_ = true;
   if (nested_handler_ == nullptr) {
-    return Status::CANCELLED;
+    return Status::Cancelled();
   }
 
-  span<const std::byte> submessage;
+  std::span<const std::byte> submessage;
   if (Status status = decoder.ReadBytes(&submessage); !status.ok()) {
     return status;
   }

@@ -15,11 +15,11 @@
 #include "pw_kvs/internal/entry_cache.h"
 
 #include "gtest/gtest.h"
+#include "pw_bytes/array.h"
 #include "pw_kvs/fake_flash_memory.h"
 #include "pw_kvs/flash_memory.h"
 #include "pw_kvs/internal/hash.h"
 #include "pw_kvs/internal/key_descriptor.h"
-#include "pw_kvs_private/byte_utils.h"
 
 namespace pw::kvs::internal {
 namespace {
@@ -83,7 +83,7 @@ TEST_F(EmptyEntryCache, EntryMetadata_Reset) {
 }
 
 TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_NewEntry) {
-  ASSERT_EQ(Status::OK,
+  ASSERT_EQ(Status::Ok(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 1000, 2000));
 
   EXPECT_EQ(1u, entries_.present_entries());
@@ -98,13 +98,13 @@ TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_NewEntry) {
 TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_NewEntry_Full) {
   for (uint32_t i = 0; i < kMaxEntries; ++i) {
     ASSERT_EQ(  // Fill up the cache
-        Status::OK,
+        Status::Ok(),
         entries_.AddNewOrUpdateExisting({i, i, EntryState::kValid}, i, 1));
   }
   ASSERT_EQ(kMaxEntries, entries_.total_entries());
   ASSERT_TRUE(entries_.full());
 
-  EXPECT_EQ(Status::RESOURCE_EXHAUSTED,
+  EXPECT_EQ(Status::ResourceExhausted(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 1000, 1));
   EXPECT_EQ(kMaxEntries, entries_.total_entries());
 }
@@ -113,7 +113,7 @@ TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_UpdatedEntry) {
   KeyDescriptor kd = kDescriptor;
   kd.transaction_id += 3;
 
-  ASSERT_EQ(Status::OK, entries_.AddNewOrUpdateExisting(kd, 3210, 2000));
+  ASSERT_EQ(Status::Ok(), entries_.AddNewOrUpdateExisting(kd, 3210, 2000));
 
   EXPECT_EQ(1u, entries_.present_entries());
 
@@ -125,15 +125,15 @@ TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_UpdatedEntry) {
 }
 
 TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_AddDuplicateEntry) {
-  ASSERT_EQ(Status::OK,
+  ASSERT_EQ(Status::Ok(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 1000, 2000));
-  ASSERT_EQ(Status::OK,
+  ASSERT_EQ(Status::Ok(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 3000, 2000));
-  ASSERT_EQ(Status::OK,
+  ASSERT_EQ(Status::Ok(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 7000, 2000));
 
   // Duplicates beyond the redundancy are ignored.
-  ASSERT_EQ(Status::OK,
+  ASSERT_EQ(Status::Ok(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 9000, 2000));
 
   EXPECT_EQ(1u, entries_.present_entries());
@@ -150,9 +150,9 @@ TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_AddDuplicateEntry) {
 }
 
 TEST_F(EmptyEntryCache, AddNewOrUpdateExisting_AddDuplicateEntryInSameSector) {
-  ASSERT_EQ(Status::OK,
+  ASSERT_EQ(Status::Ok(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 1000, 1000));
-  EXPECT_EQ(Status::DATA_LOSS,
+  EXPECT_EQ(Status::DataLoss(),
             entries_.AddNewOrUpdateExisting(kDescriptor, 1950, 1000));
 
   EXPECT_EQ(1u, entries_.present_entries());
@@ -195,14 +195,17 @@ TEST_F(EmptyEntryCache, Iterator_Const_CanBeAssignedFromMutable) {
 }
 
 constexpr size_t kSectorSize = 64;
-
-constexpr auto kTheEntry = AsBytes(uint32_t(12345),  // magic
-                                   uint32_t(0),      // checksum
-                                   uint8_t(0),       // alignment (16 B)
-                                   uint8_t(sizeof(kTheKey) - 1),  // key length
-                                   uint16_t(0),                   // value size
-                                   uint32_t(123),  // transaction ID
-                                   ByteStr(kTheKey));
+constexpr uint32_t kMagic = 0xa14ae726;
+// For KVS entry magic value always use a random 32 bit integer rather than a
+// human readable 4 bytes. See pw_kvs/format.h for more information.
+constexpr auto kTheEntry =
+    bytes::Concat(uint32_t(kMagic),              // magic
+                  uint32_t(0),                   // checksum
+                  uint8_t(0),                    // alignment (16 B)
+                  uint8_t(sizeof(kTheKey) - 1),  // key length
+                  uint16_t(0),                   // value size
+                  uint32_t(123),                 // transaction ID
+                  bytes::String(kTheKey));
 constexpr std::array<byte, kSectorSize - kTheEntry.size() % kSectorSize>
     kPadding1{};
 constexpr size_t kSize1 = kTheEntry.size() + kPadding1.size();
@@ -210,44 +213,50 @@ constexpr size_t kSize1 = kTheEntry.size() + kPadding1.size();
 constexpr char kCollision1[] = "9FDC";
 constexpr char kCollision2[] = "axzzK";
 
+// For KVS entry magic value always use a random 32 bit integer rather than a
+// human readable 4 bytes. See pw_kvs/format.h for more information.
 constexpr auto kCollisionEntry =
-    AsBytes(uint32_t(12345),                   // magic
-            uint32_t(0),                       // checksum
-            uint8_t(0),                        // alignment (16 B)
-            uint8_t(sizeof(kCollision1) - 1),  // key length
-            uint16_t(0),                       // value size
-            uint32_t(123),                     // transaction ID
-            ByteStr(kCollision1));
+    bytes::Concat(uint32_t(kMagic),                  // magic
+                  uint32_t(0),                       // checksum
+                  uint8_t(0),                        // alignment (16 B)
+                  uint8_t(sizeof(kCollision1) - 1),  // key length
+                  uint16_t(0),                       // value size
+                  uint32_t(123),                     // transaction ID
+                  bytes::String(kCollision1));
 constexpr std::array<byte, kSectorSize - kCollisionEntry.size() % kSectorSize>
     kPadding2{};
 constexpr size_t kSize2 = kCollisionEntry.size() + kPadding2.size();
 
+// For KVS entry magic value always use a random 32 bit integer rather than a
+// human readable 4 bytes. See pw_kvs/format.h for more information.
 constexpr auto kDeletedEntry =
-    AsBytes(uint32_t(12345),                  // magic
-            uint32_t(0),                      // checksum
-            uint8_t(0),                       // alignment (16 B)
-            uint8_t(sizeof("delorted") - 1),  // key length
-            uint16_t(0xffff),                 // value size (deleted)
-            uint32_t(123),                    // transaction ID
-            ByteStr("delorted"));
+    bytes::Concat(uint32_t(kMagic),                 // magic
+                  uint32_t(0),                      // checksum
+                  uint8_t(0),                       // alignment (16 B)
+                  uint8_t(sizeof("delorted") - 1),  // key length
+                  uint16_t(0xffff),                 // value size (deleted)
+                  uint32_t(123),                    // transaction ID
+                  bytes::String("delorted"));
 constexpr std::array<byte, kSectorSize - kDeletedEntry.size() % kSectorSize>
     kPadding3{};
 
-constexpr EntryFormat kFormat{.magic = uint32_t(12345), .checksum = nullptr};
+// For KVS entry magic value always use a random 32 bit integer rather than a
+// human readable 4 bytes. See pw_kvs/format.h for more information.
+constexpr EntryFormat kFormat{.magic = uint32_t(kMagic), .checksum = nullptr};
 
 class InitializedEntryCache : public EmptyEntryCache {
  protected:
   static_assert(Hash(kCollision1) == Hash(kCollision2));
 
   InitializedEntryCache()
-      : flash_(AsBytes(kTheEntry,
-                       kPadding1,
-                       kTheEntry,
-                       kPadding1,
-                       kCollisionEntry,
-                       kPadding2,
-                       kDeletedEntry,
-                       kPadding3)),
+      : flash_(bytes::Concat(kTheEntry,
+                             kPadding1,
+                             kTheEntry,
+                             kPadding1,
+                             kCollisionEntry,
+                             kPadding2,
+                             kDeletedEntry,
+                             kPadding3)),
         partition_(&flash_),
         sectors_(sector_descriptors_, partition_, nullptr),
         format_(kFormat) {
@@ -311,7 +320,7 @@ TEST_F(InitializedEntryCache, Find_PresentEntry) {
   StatusWithSize result =
       entries_.Find(partition_, sectors_, format_, kTheKey, &metadata);
 
-  ASSERT_EQ(Status::OK, result.status());
+  ASSERT_EQ(Status::Ok(), result.status());
   EXPECT_EQ(0u, result.size());
   EXPECT_EQ(Hash(kTheKey), metadata.hash());
   EXPECT_EQ(EntryState::kValid, metadata.state());
@@ -321,14 +330,14 @@ TEST_F(InitializedEntryCache, Find_PresentEntry) {
 TEST_F(InitializedEntryCache, Find_PresentEntryWithSingleReadError) {
   // Inject 2 read errors so that the initial key read and the follow-up full
   // read of the first entry fail.
-  flash_.InjectReadError(FlashError::Unconditional(Status::INTERNAL, 2));
+  flash_.InjectReadError(FlashError::Unconditional(Status::Internal(), 2));
 
   EntryMetadata metadata;
 
   StatusWithSize result =
       entries_.Find(partition_, sectors_, format_, kTheKey, &metadata);
 
-  ASSERT_EQ(Status::OK, result.status());
+  ASSERT_EQ(Status::Ok(), result.status());
   EXPECT_EQ(1u, result.size());
   EXPECT_EQ(Hash(kTheKey), metadata.hash());
   EXPECT_EQ(EntryState::kValid, metadata.state());
@@ -336,14 +345,14 @@ TEST_F(InitializedEntryCache, Find_PresentEntryWithSingleReadError) {
 }
 
 TEST_F(InitializedEntryCache, Find_PresentEntryWithMultiReadError) {
-  flash_.InjectReadError(FlashError::Unconditional(Status::INTERNAL, 4));
+  flash_.InjectReadError(FlashError::Unconditional(Status::Internal(), 4));
 
   EntryMetadata metadata;
 
   StatusWithSize result =
       entries_.Find(partition_, sectors_, format_, kTheKey, &metadata);
 
-  ASSERT_EQ(Status::DATA_LOSS, result.status());
+  ASSERT_EQ(Status::DataLoss(), result.status());
   EXPECT_EQ(1u, result.size());
   CheckForCorruptSectors(&sectors_.FromAddress(0),
                          &sectors_.FromAddress(kSize1));
@@ -355,7 +364,7 @@ TEST_F(InitializedEntryCache, Find_DeletedEntry) {
   StatusWithSize result =
       entries_.Find(partition_, sectors_, format_, "delorted", &metadata);
 
-  ASSERT_EQ(Status::OK, result.status());
+  ASSERT_EQ(Status::Ok(), result.status());
   EXPECT_EQ(0u, result.size());
   EXPECT_EQ(Hash("delorted"), metadata.hash());
   EXPECT_EQ(EntryState::kDeleted, metadata.state());
@@ -368,7 +377,7 @@ TEST_F(InitializedEntryCache, Find_MissingEntry) {
   StatusWithSize result =
       entries_.Find(partition_, sectors_, format_, "3.141", &metadata);
 
-  ASSERT_EQ(Status::NOT_FOUND, result.status());
+  ASSERT_EQ(Status::NotFound(), result.status());
   EXPECT_EQ(0u, result.size());
   CheckForCorruptSectors();
 }
@@ -378,7 +387,7 @@ TEST_F(InitializedEntryCache, Find_Collision) {
 
   StatusWithSize result =
       entries_.Find(partition_, sectors_, format_, kCollision2, &metadata);
-  EXPECT_EQ(Status::ALREADY_EXISTS, result.status());
+  EXPECT_EQ(Status::AlreadyExists(), result.status());
   EXPECT_EQ(0u, result.size());
   CheckForCorruptSectors();
 }

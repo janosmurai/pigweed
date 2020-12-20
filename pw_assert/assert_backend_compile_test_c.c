@@ -24,6 +24,17 @@
 #define PW_ASSERT_USE_SHORT_NAMES 1
 
 #include "pw_assert/assert.h"
+
+static void EnsureNullIsIncluded() {
+  // This is a compile check to ensure NULL is defined. It comes before the
+  // status.h include to ensure we don't accidentally get NULL from status.h.
+  PW_CHECK_NOTNULL(0xa);
+  PW_CHECK_NOTNULL(0x0);
+}
+
+#include <stdbool.h>
+
+#include "pw_assert/light.h"
 #include "pw_status/status.h"
 
 #ifdef __cplusplus
@@ -115,6 +126,9 @@ void AssertBackendCompileTestsInC() {
     PW_CHECK_PTR_GE(x_ptr, y_ptr);
     PW_CHECK_PTR_GE(x_ptr, y_ptr, "PTR: " FAIL_IF_HIDDEN);
     PW_CHECK_PTR_GE(x_ptr, y_ptr, "PTR: " FAIL_IF_HIDDEN_ARGS, z);
+
+    PW_CHECK_NOTNULL(0xa);
+    PW_CHECK_NOTNULL(0x0);
   }
 
   {  // TEST(Check, FloatComparison)
@@ -122,13 +136,14 @@ void AssertBackendCompileTestsInC() {
     float x_float = 50.5;
     float y_float = 66.5;
 
-    PW_CHECK_FLOAT_LE(x_float, y_float);
-    PW_CHECK_FLOAT_LE(x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED);
-    PW_CHECK_FLOAT_LE(x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED_ARGS, z);
+    PW_CHECK_FLOAT_EXACT_LE(x_float, y_float);
+    PW_CHECK_FLOAT_EXACT_LE(x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED);
+    PW_CHECK_FLOAT_EXACT_LE(
+        x_float, y_float, "FLOAT: " FAIL_IF_DISPLAYED_ARGS, z);
 
-    PW_CHECK_FLOAT_GE(x_float, y_float);
-    PW_CHECK_FLOAT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN);
-    PW_CHECK_FLOAT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN_ARGS, z);
+    PW_CHECK_FLOAT_EXACT_GE(x_float, y_float);
+    PW_CHECK_FLOAT_EXACT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN);
+    PW_CHECK_FLOAT_EXACT_GE(x_float, y_float, "FLOAT: " FAIL_IF_HIDDEN_ARGS, z);
   }
 
   // Don't exhaustively test the DCHECKs but have a sampling of them.
@@ -138,7 +153,7 @@ void AssertBackendCompileTestsInC() {
     PW_DCHECK(5 == 10, "Message");
     PW_DCHECK(5 == 10, "Message: %d", 5);
     PW_DCHECK_INT_LE(5.4, 10.0);
-    PW_DCHECK_FLOAT_EQ(5.4, 10.0, "Message");
+    PW_DCHECK_FLOAT_EXACT_EQ(5.4, 10.0, "Message");
   }
 
   {  // TEST(Check, ComparisonArgumentsWithCommas)
@@ -184,7 +199,7 @@ void AssertBackendCompileTestsInC() {
     CHECK_INT_LE(x_int, y_int, "INT: " FAIL_IF_DISPLAYED_ARGS, z);
   }
 
-  {  // Compile tests for PW_ASSERT_OK().
+  {  // Compile tests for PW_CHECK_OK().
     PW_CHECK_OK(PW_STATUS_OK);
     PW_CHECK_OK(PW_STATUS_OK, "msg");
     PW_CHECK_OK(PW_STATUS_OK, "msg: %d", 5);
@@ -192,4 +207,20 @@ void AssertBackendCompileTestsInC() {
     PW_DCHECK_OK(PW_STATUS_OK, "msg");
     PW_DCHECK_OK(PW_STATUS_OK, "msg: %d", 5);
   }
+
+  {  // TEST(Assert, Basic)
+    MAYBE_SKIP_TEST;
+    PW_ASSERT(false);
+    PW_ASSERT(123 == 456);
+  }
+
+  {  // Compile tests for PW_ASSERT().
+    PW_ASSERT(true);
+    PW_ASSERT(123 != 456);
+
+    PW_DASSERT(true);
+    PW_DASSERT(123 != 456);
+  }
+
+  EnsureNullIsIncluded();
 }

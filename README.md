@@ -10,6 +10,18 @@ Pigweed is in the early stages of development, **and should be considered
 experimental**. We’re continuing to evolve the platform and add new modules. We
 value developer feedback along the way.
 
+# Quick links
+
+ - [Getting started guide](docs/getting_started.md)
+ - [Source code](https://pigweed.googlesource.com/pigweed/pigweed/+/refs/heads/master)
+ - [Code reviews](https://pigweed-review.googlesource.com/)
+ - [Issue tracker](https://bugs.chromium.org/p/pigweed/issues/list)
+ - [Mailing list](https://groups.google.com/forum/#!forum/pigweed)
+ - [Chat room (Discord)](https://discord.gg/M9NSeTA)
+ - [Open Source blog post](https://opensource.googleblog.com/2020/03/pigweed-collection-of-embedded-libraries.html)
+
+Get the code: `git clone https://pigweed.googlesource.com/pigweed/pigweed`
+
 # Getting Started
 
 If you'd like to get set up with Pigweed, please visit the
@@ -58,7 +70,7 @@ With `pw format`, you can format C, C++, Python, GN, and Go code according to
 configurations defined by your project. `pw format` leverages existing tools
 like `clang-format`, and it’s simple to add support for new languages.
 
-![pw presubmit demo](docs/images/pw_presubmit_demo.gif)
+![pw presubmit demo](pw_presubmit/docs/pw_presubmit_demo.gif)
 
 ## `pw_env_setup` - Cross platform embedded compiler setup
 
